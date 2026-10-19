@@ -54,8 +54,10 @@ def create_pattern(
     x_spacing: float = 0.0,
     y_spacing: float = 0.0,
     count: int = 1,
-    angle: float = 0.0,
-    axis_face_index: int = 0,
+    angle: float = 360.0,
+    axis_x: float = 0.0,
+    axis_y: float = 0.0,
+    axis_z: float = 0.0,
     fill_region_face_index: int = 0,
     x_offsets: list[float] | None = None,
     y_offsets: list[float] | None = None,
@@ -68,16 +70,21 @@ def create_pattern(
 
     rectangular_ex: x_count/y_count + x_spacing/y_spacing (meters), the
     1-based plane_index the grid sits on (1=Top/XY, 2=Right/YZ, 3=Front/XZ)
-    and rectangle_angle (degrees, grid rotation). user_defined: feature_name
-    alone. Every other method is unsupported - circular_ex, duplicate,
-    by_fill, by_fill_ex, by_table, by_table_sync and by_curve_ex need
-    keypoints, region profiles or Excel tables that cannot be built here.
-    Use 'rectangular_ex', or pattern the feature in the Solid Edge UI.
+    and rectangle_angle (degrees, grid rotation). circular_ex: count instances
+    (original included, >= 2) spread over angle (degrees, default 360) around
+    an axis through (axis_x, axis_y, axis_z) (meters), normal to plane_index.
+    user_defined: feature_name alone. Every other method is unsupported -
+    duplicate, by_fill, by_fill_ex, by_table, by_table_sync and by_curve_ex
+    need keypoints, region profiles or Excel tables that cannot be built here.
+    Pattern those in the Solid Edge UI.
     """
     err = validate_numerics(
         x_spacing=x_spacing,
         y_spacing=y_spacing,
         angle=angle,
+        axis_x=axis_x,
+        axis_y=axis_y,
+        axis_z=axis_z,
         spacing=spacing,
         rectangle_angle=rectangle_angle,
     )
@@ -96,7 +103,13 @@ def create_pattern(
             )
         case "circular_ex":
             return feature_manager.create_pattern_circular_ex(
-                feature_name=feature_name, count=count, angle=angle, axis_face_index=axis_face_index
+                feature_name=feature_name,
+                count=count,
+                angle=angle,
+                plane_index=plane_index,
+                axis_x=axis_x,
+                axis_y=axis_y,
+                axis_z=axis_z,
             )
         case "duplicate":
             return feature_manager.create_pattern_duplicate(feature_name=feature_name)

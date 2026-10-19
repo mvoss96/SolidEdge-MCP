@@ -1011,43 +1011,84 @@ class MiscFeaturesMixin:
         self,
         feature_name: str,
         count: int,
-        angle: float,
-        axis_face_index: int,
+        angle: float = 360.0,
+        plane_index: int = 1,
+        axis_x: float = 0.0,
+        axis_y: float = 0.0,
+        axis_z: float = 0.0,
     ) -> dict[str, Any]:
         """
-        Create a circular pattern using the extended AddByCircularEx method.
+        Create a circular pattern with Patterns.AddByCircularEx.
 
-        NOT AVAILABLE via COM automation. AddByCircularEx takes
-        (NumberOfFeatures, FeatureArray, ReferencePlane, RadialCount,
-        AngleSpacing, AxisPoint, PatternMethod, CurveDirection, ArcPattern,
-        PatternType). AxisPoint is a SAFEARRAY of doubles - a point on the
-        rotation axis - not the cylindrical face this tool is given, and there
-        is no way to derive one from the other here. The call is never made.
+        AddByCircularEx(NumberOfFeatures, FeatureArray, ReferencePlane,
+        RadialCount, AngleSpacing, AxisPoint, PatternMethod, CurveDirection,
+        ArcPattern, PatternType). The axis runs through AxisPoint, normal to
+        the reference plane.
 
         Args:
             feature_name: Name of the feature to pattern
-            count: Number of instances around the circle
-            angle: Total angle in degrees
-            axis_face_index: 0-based index of the cylindrical face to use as axis
+            count: Number of instances, the original included
+            angle: Angle the instances are spread over, in degrees
+            plane_index: 1-based reference plane the axis is normal to
+            axis_x, axis_y, axis_z: A point on the axis, in meters
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and pattern info
         """
-        return {
-            "error": (
-                "Circular feature patterns are not available through this "
-                "server: Patterns.AddByCircularEx needs a reference plane and an "
-                "AxisPoint coordinate array, which cannot be derived from a face "
-                "index. Use create_pattern(method='rectangular_ex') or pattern "
-                "the feature in the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "pattern_circular_ex",
-            "feature": feature_name,
-            "count": count,
-            "angle": angle,
-            "axis_face_index": axis_face_index,
-        }
+        try:
+            import win32com.client as win32
+
+            if count < 2:
+                return {"error": f"count must be at least 2 (got {count})."}
+
+            doc = self.doc_manager.get_active_document()
+            models = doc.Models
+            if models.Count == 0:
+                return {"error": "No base feature exists."}
+            model = models.Item(1)
+
+            target_feature, error = self._find_feature_by_name(feature_name)
+            if error:
+                return error
+
+            ref_planes = doc.RefPlanes
+            if plane_index < 1 or plane_index > ref_planes.Count:
+                return {
+                    "error": f"Invalid plane_index: {plane_index}. "
+                    f"Document has {ref_planes.Count} reference planes."
+                }
+            ref_plane = ref_planes.Item(plane_index)
+
+            # Verified on Solid Edge 2026 through the type-library wrapper,
+            # which marshals the plain lists as SAFEARRAY(VT_DISPATCH) and
+            # SAFEARRAY(VT_R8). AxisPoint must be a 3D point; [x, y] answers
+            # E_INVALIDARG. CurveDirection 0 is what the verified call passed.
+            patterns = win32.gencache.EnsureDispatch(model.Patterns)
+            pattern = patterns.AddByCircularEx(
+                1,
+                [target_feature],
+                ref_plane,
+                count,
+                math.radians(angle),
+                [axis_x, axis_y, axis_z],
+                PatternOffsetTypeConstants.sePatternFitOffset,
+                0,
+                False,
+                PatternTypeConstants.seSmartPattern,
+            )
+
+            return {
+                "status": "created",
+                "type": "pattern_circular_ex",
+                "feature": feature_name,
+                "count": count,
+                "angle": angle,
+                "plane_index": plane_index,
+                "axis_point": [axis_x, axis_y, axis_z],
+                "name": com_get(pattern, "Name", None),
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_pattern_duplicate(self, feature_name: str) -> dict[str, Any]:

@@ -1164,6 +1164,32 @@ class TestCreatePattern:
             rectangle_angle=0.0,
         )
 
+    def test_circular_ex_passes_args(self, mock_mgr):
+        mock_mgr.create_pattern_circular_ex.return_value = {"status": "ok"}
+        create_pattern(
+            method="circular_ex",
+            feature_name="Spoke",
+            count=16,
+            plane_index=3,
+            axis_x=0.1,
+            axis_y=0.0,
+            axis_z=0.2,
+        )
+        mock_mgr.create_pattern_circular_ex.assert_called_once_with(
+            feature_name="Spoke",
+            count=16,
+            angle=360.0,
+            plane_index=3,
+            axis_x=0.1,
+            axis_y=0.0,
+            axis_z=0.2,
+        )
+
+    def test_circular_ex_rejects_a_non_finite_axis_point(self, mock_mgr):
+        result = create_pattern(method="circular_ex", feature_name="Spoke", axis_x=float("nan"))
+        assert "error" in result
+        mock_mgr.create_pattern_circular_ex.assert_not_called()
+
     def test_unknown(self, mock_mgr):
         result = create_pattern(method="bogus")
         assert "error" in result

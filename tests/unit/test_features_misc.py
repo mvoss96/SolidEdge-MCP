@@ -1342,17 +1342,87 @@ class TestCreatePatternRectangularEx:
 
 
 class TestCreatePatternCircularEx:
-    """AddByCircularEx needs a reference plane and an AxisPoint array."""
+    """AddByCircularEx with a reference plane and a 3D AxisPoint."""
 
-    def test_unsupported(self, feature_mgr, managers):
+    @pytest.fixture(autouse=True)
+    def no_gencache(self, monkeypatch):
+        import win32com.client
+
+        monkeypatch.setattr(win32com.client.gencache, "EnsureDispatch", lambda obj: obj)
+
+    def test_success(self, feature_mgr, managers):
         _, _, doc, _, model, _ = managers
-        _setup_feature_lookup(doc, "Hole1")
+        feat = _setup_feature_lookup(doc, "Spoke")
+        pattern = MagicMock()
+        pattern.Name = "Pattern_1"
+        model.Patterns.AddByCircularEx.return_value = pattern
 
-        result = feature_mgr.create_pattern_circular_ex("Hole1", 6, 360.0, 0)
-        assert result["unsupported"] is True
-        assert result["count"] == 6
-        assert result["angle"] == 360.0
-        assert "AxisPoint" in result["error"]
+        result = feature_mgr.create_pattern_circular_ex(
+            "Spoke", 16, plane_index=3, axis_x=0.01, axis_y=0.0, axis_z=0.02
+        )
+
+        assert result["status"] == "created"
+        assert result["name"] == "Pattern_1"
+        assert result["axis_point"] == [0.01, 0.0, 0.02]
+        doc.RefPlanes.Item.assert_called_with(3)
+        # NumberOfFeatures, FeatureArray, ReferencePlane, RadialCount,
+        # AngleSpacing, AxisPoint, PatternMethod, CurveDirection, ArcPattern,
+        # PatternType
+        model.Patterns.AddByCircularEx.assert_called_once_with(
+            1,
+            [feat],
+            doc.RefPlanes.Item.return_value,
+            16,
+            2 * math.pi,
+            [0.01, 0.0, 0.02],
+            0,
+            0,
+            False,
+            0,
+        )
+
+    def test_angle_is_converted_to_radians(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Spoke")
+
+        feature_mgr.create_pattern_circular_ex("Spoke", 4, angle=90.0)
+
+        args = model.Patterns.AddByCircularEx.call_args.args
+        assert args[4] == pytest.approx(math.pi / 2)
+
+    def test_axis_point_is_three_dimensional(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Spoke")
+
+        feature_mgr.create_pattern_circular_ex("Spoke", 4)
+
+        assert model.Patterns.AddByCircularEx.call_args.args[5] == [0.0, 0.0, 0.0]
+
+    def test_invalid_plane_index(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Spoke")
+
+        result = feature_mgr.create_pattern_circular_ex("Spoke", 4, plane_index=9)
+
+        assert "Invalid plane_index" in result["error"]
+        model.Patterns.AddByCircularEx.assert_not_called()
+
+    def test_count_below_two_is_refused(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Spoke")
+
+        result = feature_mgr.create_pattern_circular_ex("Spoke", 1)
+
+        assert "error" in result
+        model.Patterns.AddByCircularEx.assert_not_called()
+
+    def test_feature_not_found(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Other")
+
+        result = feature_mgr.create_pattern_circular_ex("Spoke", 4)
+
+        assert "not found" in result["error"]
         model.Patterns.AddByCircularEx.assert_not_called()
 
 

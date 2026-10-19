@@ -19,8 +19,8 @@ AI-assisted CAD through the [Model Context Protocol](https://modelcontextprotoco
 
 Every number here is measured, and [`reference/VERIFICATION_STATUS.md`](reference/VERIFICATION_STATUS.md) carries the commands that regenerate it.
 
-- **164 of the 213 `create_*` backend methods verify their own result.** The body's face count and volume, or the COM collection the feature lands in, must change; otherwise the call reports an error instead of `status: "created"`. A call that succeeds and builds nothing was this server's defining bug, and it can no longer pass silently.
-- **The other 49 refuse before touching COM**, returning `unsupported: True` with the evidence: a Solid Edge defect, a call that crashes the process, or an object only the UI can select. Each is listed with its evidence in the status document. The largest groups are swept and lofted surfaces, threads on an existing cylinder, ordered flanges and louvers, contour flanges, blends, wires, and assembly patterns and mirrors.
+- **165 of the 213 `create_*` backend methods verify their own result.** The body's face count and volume, or the COM collection the feature lands in, must change; otherwise the call reports an error instead of `status: "created"`. A call that succeeds and builds nothing was this server's defining bug, and it can no longer pass silently.
+- **The other 48 refuse before touching COM**, returning `unsupported: True` with the evidence: a Solid Edge defect, a call that crashes the process, or an object only the UI can select. Each is listed with its evidence in the status document. The largest groups are swept and lofted surfaces, threads on an existing cylinder, ordered flanges and louvers, contour flanges, blends, wires, and assembly patterns and mirrors.
 - **Every tool has been driven against a real Solid Edge.** `scripts/live_sweep.py` records the outcome of all 119 in [`reference/LIVE_SWEEP.md`](reference/LIVE_SWEEP.md): 116 OK, 16 honest refusals and 2 deliberate error probes across 134 cases on Solid Edge 2026.
 - 80 integration tests pin the fixes and a known-answer box; the unit tests cover shape, not truth.
 

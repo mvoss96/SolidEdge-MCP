@@ -44,12 +44,12 @@ which succeeds and builds nothing.
 
 | | count | |
 |---|---|---|
-| Verified live | **164** | the body or the target collection must change, or the result becomes an error |
-| Refuse honestly | 49 | return `unsupported: True` -- 46 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
+| Verified live | **165** | the body or the target collection must change, or the result becomes an error |
+| Refuse honestly | 48 | return `unsupported: True` -- 45 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
 | Neither | **0** | |
 | **Total `create_*`** | **213** | |
 
-Of the 164, 117 are face-count checks and 47 are collection-growth checks:
+Of the 165, 118 are face-count checks and 47 are collection-growth checks:
 15 reference planes (`RefPlanes`), 11 surfaces (the five `Constructions.*Surfaces`
 summed), 1 split (`Models.*.Splits`, because the first model keeps its faces), 9 that reshape or annotate (`Models.*.Etches`, `.Threads`, `.Drafts`,
 `.FaceRotates`; `PartsLists`, `DraftBendTables`), 3 surface blends
@@ -182,6 +182,14 @@ design bodies, Models 1 -> 2); `thicken(method='basic')`
 extruded surface into a 12-face solid for all three sides -- the surface's own
 `Faces` property raises; `thicken(method='sync')` makes the same call, since
 `Thickens.AddSync` lives on a Model and a surface-only document has none).
+
+Turned from a refusal into a working creator on 2026-10-19:
+`create_pattern(method='circular_ex')` (`Patterns.AddByCircularEx(1, [feature],
+RefPlane, count, angle, [x, y, z], sePatternFitOffset, 0, False, seSmartPattern)`
+through the type-library wrapper; the axis runs through the 3D `AxisPoint`
+normal to the plane, a 2D point answers `E_INVALIDARG`). The call was driven
+live by direct COM in an ordered part (16 spokes, 50 teeth, a pattern of 5
+holes, all over 360 degrees); the tool path itself has unit tests only so far.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`
