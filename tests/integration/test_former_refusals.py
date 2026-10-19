@@ -187,6 +187,24 @@ class TestWire:
         assert doc.Paths.Count == 1
         assert doc.Harnesses.Item(1).Wires.Count == 1
 
+    def test_cables_and_bundles_hold_harness_wires(self, stack, new_assembly):
+        doc = stack.doc.get_active_document()
+        for y in (0.0, 0.01):
+            r = stack.assembly.add_wire([], [], "", path_points=[[0.0, y, 0.0], [0.1, y, 0.0]])
+            assert r.get("status") == "created", r
+
+        cable = stack.assembly.add_cable(
+            [], [], [0, 1], description="C1", path_points=[[0.0, 0.02, 0.0], [0.1, 0.02, 0.0]]
+        )
+        bundle = stack.assembly.add_bundle(
+            [], [], [0], description="B1", path_points=[[0.0, 0.03, 0.0], [0.1, 0.03, 0.0]]
+        )
+
+        assert cable.get("status") == "created", cable
+        assert bundle.get("status") == "created", bundle
+        harness = doc.Harnesses.Item(1)
+        assert (harness.Cables.Count, harness.Bundles.Count) == (1, 1)
+
 
 class TestAutoSimplify:
     def test_an_assembly_gets_its_simplified_representation(self, stack, saved_part, new_assembly):

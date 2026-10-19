@@ -455,118 +455,77 @@ class TestAddWire:
 
 
 # ============================================================================
-# CABLES
+# CABLES AND BUNDLES
 # ============================================================================
 
 
-class TestAddCable:
-    def test_success(self, asm_mgr):
-        am, doc = asm_mgr
-        p1, w1 = MagicMock(), MagicMock()
-        cable = MagicMock()
-        cable.Name = "Cable_1"
-        cables = MagicMock()
-        cables.Add.return_value = cable
-        # Cables belongs to a Harness, reached through doc.Harnesses.
-        del doc.Cables
+class TestAddCableAndBundle:
+    """Cables and bundles take harness paths and harness wires, not occurrences."""
+
+    @staticmethod
+    def _harness(doc, wires=2):
         harness = MagicMock()
-        harness.Cables = cables
-        harnesses = MagicMock()
-        harnesses.Count = 1
-        harnesses.Item.return_value = harness
-        doc.Harnesses = harnesses
+        doc.Harnesses.Count = 1
+        doc.Harnesses.Item.return_value = harness
+        items = [MagicMock(name=f"wire{i}") for i in range(wires)]
+        harness.Wires.Count = wires
+        harness.Wires.Item.side_effect = lambda i: items[i - 1]
+        return harness, items
 
-        occurrences = MagicMock()
-        occurrences.Count = 3
-        occurrences.Item.side_effect = lambda i: {1: p1, 2: w1, 3: MagicMock()}[i]
-        doc.Occurrences = occurrences
-
-        result = am.add_cable([0], [True], [1], description="Test cable")
-        assert result["status"] == "created"
-        assert result["type"] == "cable"
-        assert result["num_paths"] == 1
-        assert result["num_wires"] == 1
-        cables.Add.assert_called_once()
-
-    def test_mismatched_path_lengths(self, asm_mgr):
+    @pytest.mark.parametrize(("kind", "collection"), [("cable", "Cables"), ("bundle", "Bundles")])
+    def test_routes_the_wires_along_a_path_through_points(self, asm_mgr, kind, collection):
         am, doc = asm_mgr
-        doc.Occurrences = MagicMock()
+        harness, wires = self._harness(doc)
+        path = doc.Paths.Add.return_value
+
+        add = am.add_cable if kind == "cable" else am.add_bundle
+        result = add([], [], [1, 0], description="C1", path_points=[[0, 0, 0], [0.1, 0, 0]])
+
+        assert result["status"] == "created", result
+        assert result["num_wires"] == 2
+        getattr(harness, collection).Add.assert_called_once_with(
+            1, [path], [True], 2, [wires[1], wires[0]], [], [], "C1"
+        )
+        doc.Occurrences.Item.assert_not_called()
+
+    def test_path_indices_name_existing_harness_paths(self, asm_mgr):
+        am, doc = asm_mgr
+        harness, wires = self._harness(doc, wires=1)
+        doc.Paths.Count = 2
+        first, second = MagicMock(), MagicMock()
+        doc.Paths.Item.side_effect = lambda i: [None, first, second][i]
+
+        am.add_cable([1], [False], [0], split_path_indices=[0])
+
+        harness.Cables.Add.assert_called_once_with(
+            1, [second], [False], 1, [wires[0]], [first], [True], ""
+        )
+
+    def test_a_bad_wire_index_is_an_error(self, asm_mgr):
+        am, doc = asm_mgr
+        harness, _ = self._harness(doc, wires=1)
+
+        result = am.add_bundle([], [], [3], path_points=[[0, 0, 0], [0.1, 0, 0]])
+
+        assert "Invalid wire index" in result["error"]
+        harness.Bundles.Add.assert_not_called()
+
+    def test_no_wires_is_an_error(self, asm_mgr):
+        am, doc = asm_mgr
+        self._harness(doc)
+
+        result = am.add_cable([], [], [], path_points=[[0, 0, 0], [0.1, 0, 0]])
+
+        assert "harness wires" in result["error"]
+
+    def test_mismatched_directions(self, asm_mgr):
+        am, doc = asm_mgr
+        self._harness(doc)
+        doc.Paths.Count = 2
 
         result = am.add_cable([0, 1], [True], [0])
-        assert "error" in result
-        assert "same length" in result["error"]
 
-    def test_invalid_wire_index(self, asm_mgr):
-        am, doc = asm_mgr
-        occurrences = MagicMock()
-        occurrences.Count = 2
-        occurrences.Item.return_value = MagicMock()
-        doc.Occurrences = occurrences
-
-        result = am.add_cable([0], [True], [5])
-        assert "error" in result
-        assert "Invalid wire index" in result["error"]
-
-    def test_not_assembly(self, asm_mgr):
-        am, doc = asm_mgr
-        doc.Type = IG_PART_DOCUMENT
-
-        result = am.add_cable([0], [True], [0])
-        assert "error" in result
-
-
-# ============================================================================
-# BUNDLES
-# ============================================================================
-
-
-class TestAddBundle:
-    def test_success(self, asm_mgr):
-        am, doc = asm_mgr
-        p1, c1 = MagicMock(), MagicMock()
-        bundle = MagicMock()
-        bundle.Name = "Bundle_1"
-        bundles = MagicMock()
-        bundles.Add.return_value = bundle
-        # Bundles belongs to a Harness, reached through doc.Harnesses.
-        del doc.Bundles
-        harness = MagicMock()
-        harness.Bundles = bundles
-        harnesses = MagicMock()
-        harnesses.Count = 1
-        harnesses.Item.return_value = harness
-        doc.Harnesses = harnesses
-
-        occurrences = MagicMock()
-        occurrences.Count = 3
-        occurrences.Item.side_effect = lambda i: {1: p1, 2: c1, 3: MagicMock()}[i]
-        doc.Occurrences = occurrences
-
-        result = am.add_bundle([0], [True], [1], description="Test bundle")
-        assert result["status"] == "created"
-        assert result["type"] == "bundle"
-        assert result["num_paths"] == 1
-        assert result["num_conductors"] == 1
-        bundles.Add.assert_called_once()
-
-    def test_mismatched_path_lengths(self, asm_mgr):
-        am, doc = asm_mgr
-        doc.Occurrences = MagicMock()
-
-        result = am.add_bundle([0, 1], [True], [0])
-        assert "error" in result
-        assert "same length" in result["error"]
-
-    def test_invalid_conductor_index(self, asm_mgr):
-        am, doc = asm_mgr
-        occurrences = MagicMock()
-        occurrences.Count = 2
-        occurrences.Item.return_value = MagicMock()
-        doc.Occurrences = occurrences
-
-        result = am.add_bundle([0], [True], [5])
-        assert "error" in result
-        assert "Invalid conductor index" in result["error"]
+        assert "one entry per path" in result["error"]
 
     def test_not_assembly(self, asm_mgr):
         am, doc = asm_mgr

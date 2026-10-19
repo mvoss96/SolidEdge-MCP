@@ -874,10 +874,11 @@ def wiring(
 ) -> dict[str, Any]:
     """Create wire-harness elements in the assembly.
 
-    wire: path_points ([x, y, z] in meters, two or more) makes a harness path
-    through them and routes the wire along it; or path_indices into the
-    assembly's existing harness paths + path_directions. cable: + wire_indices.
-    bundle: + conductor_indices. Both may take split_path_indices/directions.
+    wire/cable/bundle: path_points ([x, y, z] in meters, two or more) makes a
+    harness path through them; or path_indices into the assembly's existing
+    harness paths + path_directions. A wire result has its wire_index.
+    cable: + wire_indices, bundle: + conductor_indices, both naming harness
+    wires; both may take split_path_indices/directions (harness paths).
     splice: x,y,z (meters) + conductor_indices. All indices 0-based.
     """
     err = validate_numerics(x=x, y=y, z=z)
@@ -899,6 +900,7 @@ def wiring(
                 split_path_indices=split_path_indices,
                 split_path_directions=split_path_directions,
                 description=description,
+                path_points=path_points,
             )
         case "bundle":
             return assembly_manager.add_bundle(
@@ -908,6 +910,7 @@ def wiring(
                 split_path_indices=split_path_indices,
                 split_path_directions=split_path_directions,
                 description=description,
+                path_points=path_points,
             )
         case "splice":
             return assembly_manager.add_splice(

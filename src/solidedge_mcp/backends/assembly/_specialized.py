@@ -526,7 +526,60 @@ class SpecializedMixin:
             _logger.error(f"Failed to add splice: {e}")
             return error_result(e)
 
-    # -- Wires ---------------------------------------------------------------
+    # -- Wires, cables and bundles -------------------------------------------
+
+    @staticmethod
+    def _harness_paths(
+        doc: Any, path_indices: list[int], path_points: list[list[float]] | None, what: str
+    ) -> tuple[list[Any], dict[str, Any] | None]:
+        """Harness paths for a conductor: existing ones by index, or one through points.
+
+        Wires.Add, Cables.Add and Bundles.Add route along AssemblyDocument.Paths
+        entries; occurrences and 3D sketch lines answer E_FAIL (Solid Edge
+        2026). A path through space points is made with Paths.Add, which
+        answers E_INVALIDARG unless EndpointEndType is passed as well.
+        """
+        harness_paths = doc.Paths
+        if path_points:
+            if path_indices:
+                return [], {"error": "Pass path_points or path_indices, not both."}
+            if len(path_points) < 2 or any(len(pt) != 3 for pt in path_points):
+                return [], {"error": "path_points needs two or more [x, y, z] points."}
+            n = len(path_points)
+            natural = KeypointEndConditionConstants.seKeypointEndConditionNatural
+            path = harness_paths.Add(
+                n,
+                [PointTypeConstants.igSpacePoint] * n,
+                [None] * n,
+                [KeyPointTypeConstants.igKeyPointPointOnly] * n,
+                [float(c) for pt in path_points for c in pt],
+                natural,
+                natural,
+            )
+            return [path], None
+        paths = []
+        for idx in path_indices:
+            if idx < 0 or idx >= harness_paths.Count:
+                return [], {
+                    "error": f"Invalid path index: {idx}. "
+                    f"The assembly has {harness_paths.Count} harness paths."
+                }
+            paths.append(harness_paths.Item(idx + 1))
+        if not paths:
+            return [], {"error": f"A {what} needs path_points or path_indices."}
+        return paths, None
+
+    @staticmethod
+    def _harness_items(collection: Any, indices: list[int], what: str) -> tuple[list[Any], Any]:
+        """Items of a harness collection by 0-based index, or an error dict."""
+        items = []
+        for idx in indices:
+            if idx < 0 or idx >= collection.Count:
+                return [], {
+                    "error": f"Invalid {what} index: {idx}. The harness has {collection.Count}."
+                }
+            items.append(collection.Item(idx + 1))
+        return items, None
 
     def add_wire(
         self,
@@ -538,50 +591,19 @@ class SpecializedMixin:
         """Add a wire to the assembly's harness along harness paths.
 
         Wires.Add(NumberOfPaths, PathArray, PathDirectionArray,
-        ConductorDescription) routes along AssemblyDocument.Paths entries;
-        occurrences and 3D sketch lines answer E_FAIL (Solid Edge 2026).
-        path_indices are 0-based indices into AssemblyDocument.Paths.
-        path_points (x, y, z in meters, two or more) first makes a path through
-        those space points with Paths.Add; that call answers E_INVALIDARG
-        unless EndpointEndType is passed as well.
+        ConductorDescription). path_indices are 0-based indices into
+        AssemblyDocument.Paths; path_points (x, y, z in meters, two or more)
+        makes a path through those points first.
         """
         try:
             doc = self.doc_manager.get_active_document()
             err = self._require_assembly(doc)
             if err:
                 return err
-            harness_paths = doc.Paths
-            paths: list[Any] = []
-            directions = list(path_directions)
-            if path_points:
-                if path_indices:
-                    return {"error": "Pass path_points or path_indices, not both."}
-                if len(path_points) < 2 or any(len(pt) != 3 for pt in path_points):
-                    return {"error": "path_points needs two or more [x, y, z] points."}
-                n = len(path_points)
-                natural = KeypointEndConditionConstants.seKeypointEndConditionNatural
-                paths.append(
-                    harness_paths.Add(
-                        n,
-                        [PointTypeConstants.igSpacePoint] * n,
-                        [None] * n,
-                        [KeyPointTypeConstants.igKeyPointPointOnly] * n,
-                        [float(c) for pt in path_points for c in pt],
-                        natural,
-                        natural,
-                    )
-                )
-                directions = directions or [True]
-            else:
-                for idx in path_indices:
-                    if idx < 0 or idx >= harness_paths.Count:
-                        return {
-                            "error": f"Invalid path index: {idx}. "
-                            f"The assembly has {harness_paths.Count} harness paths."
-                        }
-                    paths.append(harness_paths.Item(idx + 1))
-            if not paths:
-                return {"error": "A wire needs path_points or path_indices."}
+            paths, err = self._harness_paths(doc, path_indices, path_points, "wire")
+            if err:
+                return err
+            directions = list(path_directions) or ([True] if path_points else [])
             if len(directions) != len(paths):
                 return {"error": "path_directions needs one entry per path."}
 
@@ -594,12 +616,77 @@ class SpecializedMixin:
                 "type": "wire",
                 "name": com_get(wire, "Name"),
                 "num_paths": len(paths),
+                "wire_index": harness.Wires.Count - 1,
                 "description": description,
             }
         except Exception as e:
             return error_result(e)
 
-    # -- Cables --------------------------------------------------------------
+    def _add_group(
+        self,
+        kind: str,
+        path_indices: list[int],
+        path_directions: list[bool],
+        member_indices: list[int],
+        split_path_indices: list[int] | None,
+        split_path_directions: list[bool] | None,
+        description: str,
+        path_points: list[list[float]] | None,
+    ) -> dict[str, Any]:
+        """Add a cable or bundle: harness paths plus the harness wires it holds.
+
+        Cables.Add / Bundles.Add(NumberOfPaths, PathArray, PathDirectionArray,
+        NumberOfWires, WireArray, SplitPathArray, SplitPathDirectionArray,
+        ConductorDescription) take harness paths and Wire objects as plain
+        lists; empty lists for the split paths (Solid Edge 2026).
+        """
+        try:
+            doc = self.doc_manager.get_active_document()
+            err = self._require_assembly(doc)
+            if err:
+                return err
+            paths, err = self._harness_paths(doc, path_indices, path_points, kind)
+            if err:
+                return err
+            directions = list(path_directions) or ([True] if path_points else [])
+            if len(directions) != len(paths):
+                return {"error": "path_directions needs one entry per path."}
+            harness, err = self._active_harness(doc)
+            if err:
+                return err
+            wires, err = self._harness_items(harness.Wires, member_indices, "wire")
+            if err:
+                return err
+            if not wires:
+                return {"error": f"A {kind} needs the 0-based indices of the harness wires in it."}
+            split_paths, err = self._harness_paths(doc, split_path_indices or [], None, kind)
+            if err and split_path_indices:
+                return err
+            split_dirs = list(split_path_directions or [True] * len(split_paths))
+            if len(split_dirs) != len(split_paths):
+                return {"error": "split_path_directions needs one entry per split path."}
+
+            collection = harness.Cables if kind == "cable" else harness.Bundles
+            item = collection.Add(
+                len(paths),
+                paths,
+                directions,
+                len(wires),
+                wires,
+                split_paths,
+                split_dirs,
+                description,
+            )
+            return {
+                "status": "created",
+                "type": kind,
+                "name": com_get(item, "Name"),
+                "num_paths": len(paths),
+                "num_wires": len(wires),
+                "description": description,
+            }
+        except Exception as e:
+            return error_result(e)
 
     def add_cable(
         self,
@@ -609,96 +696,24 @@ class SpecializedMixin:
         split_path_indices: list[int] | None = None,
         split_path_directions: list[bool] | None = None,
         description: str = "",
+        path_points: list[list[float]] | None = None,
     ) -> dict[str, Any]:
+        """Add a cable holding harness wires along harness paths.
+
+        path_indices / split_path_indices index AssemblyDocument.Paths and
+        wire_indices the harness wires, all 0-based; path_points makes the
+        path through [x, y, z] points (meters) instead.
         """
-        Add a cable to the assembly wiring harness.
-
-        Uses Cables.Add with multiple VARIANT-wrapped arrays.
-
-        Args:
-            path_indices: 0-based indices of occurrences defining cable path
-            path_directions: Direction booleans for each path segment
-            wire_indices: 0-based indices of wire occurrences in the cable
-            split_path_indices: Optional split path occurrence indices
-            split_path_directions: Optional split path direction booleans
-            description: Description text for the cable
-
-        Returns:
-            Dict with status and cable info
-        """
-        try:
-            _logger.info(f"Adding cable with {len(path_indices)} paths, {len(wire_indices)} wires")
-            doc = self.doc_manager.get_active_document()
-
-            err = self._require_assembly(doc)
-            if err:
-                return err
-
-            if len(path_indices) != len(path_directions):
-                return {"error": "path_indices and path_directions must have the same length"}
-
-            occurrences = doc.Occurrences
-
-            paths = []
-            for idx in path_indices:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid path index: {idx}. Count: {occurrences.Count}"}
-                paths.append(occurrences.Item(idx + 1))
-
-            wires_list = []
-            for idx in wire_indices:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid wire index: {idx}. Count: {occurrences.Count}"}
-                wires_list.append(occurrences.Item(idx + 1))
-
-            split_paths = []
-            split_dirs = split_path_directions or []
-            for idx in split_path_indices or []:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid split path index: {idx}. Count: {occurrences.Count}"}
-                split_paths.append(occurrences.Item(idx + 1))
-
-            v_paths = paths
-            v_dirs = path_directions
-            v_wires = wires_list
-            v_split_paths = split_paths
-            v_split_dirs = split_dirs
-
-            # Cables belongs to a Harness, not to the document; reading it
-            # off the document always raised. A harness is created on
-            # demand so the first wire in an assembly has somewhere to go.
-            harness, err = self._active_harness(doc)
-            if err:
-                return err
-            cables = harness.Cables
-            cable = cables.Add(
-                len(paths),
-                v_paths,
-                v_dirs,
-                len(wires_list),
-                v_wires,
-                v_split_paths,
-                v_split_dirs,
-                description,
-            )
-
-            result: dict[str, Any] = {
-                "status": "created",
-                "type": "cable",
-                "num_paths": len(paths),
-                "num_wires": len(wires_list),
-                "description": description,
-            }
-
-            with contextlib.suppress(Exception):
-                result["name"] = cable.Name
-
-            return result
-        except Exception as e:
-            _logger.error(f"Failed to add cable: {e}")
-            return error_result(e)
-
-    # -- Bundles -------------------------------------------------------------
+        return self._add_group(
+            "cable",
+            path_indices,
+            path_directions,
+            wire_indices,
+            split_path_indices,
+            split_path_directions,
+            description,
+            path_points,
+        )
 
     def add_bundle(
         self,
@@ -708,95 +723,20 @@ class SpecializedMixin:
         split_path_indices: list[int] | None = None,
         split_path_directions: list[bool] | None = None,
         description: str = "",
+        path_points: list[list[float]] | None = None,
     ) -> dict[str, Any]:
+        """Add a bundle of harness wires along harness paths.
+
+        conductor_indices index the harness wires (0-based); paths as for
+        add_cable.
         """
-        Add a bundle to the assembly wiring harness.
-
-        Uses Bundles.Add with multiple VARIANT-wrapped arrays.
-
-        Args:
-            path_indices: 0-based indices of occurrences defining bundle path
-            path_directions: Direction booleans for each path segment
-            conductor_indices: 0-based indices of conductor occurrences
-            split_path_indices: Optional split path occurrence indices
-            split_path_directions: Optional split path direction booleans
-            description: Description text for the bundle
-
-        Returns:
-            Dict with status and bundle info
-        """
-        try:
-            _logger.info(
-                "Adding bundle with %d paths, %d conductors",
-                len(path_indices),
-                len(conductor_indices),
-            )
-            doc = self.doc_manager.get_active_document()
-
-            err = self._require_assembly(doc)
-            if err:
-                return err
-
-            if len(path_indices) != len(path_directions):
-                return {"error": "path_indices and path_directions must have the same length"}
-
-            occurrences = doc.Occurrences
-
-            paths = []
-            for idx in path_indices:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid path index: {idx}. Count: {occurrences.Count}"}
-                paths.append(occurrences.Item(idx + 1))
-
-            conductors = []
-            for idx in conductor_indices:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid conductor index: {idx}. Count: {occurrences.Count}"}
-                conductors.append(occurrences.Item(idx + 1))
-
-            split_paths = []
-            split_dirs = split_path_directions or []
-            for idx in split_path_indices or []:
-                if idx < 0 or idx >= occurrences.Count:
-                    return {"error": f"Invalid split path index: {idx}. Count: {occurrences.Count}"}
-                split_paths.append(occurrences.Item(idx + 1))
-
-            v_paths = paths
-            v_dirs = path_directions
-            v_conductors = conductors
-            v_split_paths = split_paths
-            v_split_dirs = split_dirs
-
-            # Bundles belongs to a Harness, not to the document; reading it
-            # off the document always raised. A harness is created on
-            # demand so the first wire in an assembly has somewhere to go.
-            harness, err = self._active_harness(doc)
-            if err:
-                return err
-            bundles = harness.Bundles
-            bundle = bundles.Add(
-                len(paths),
-                v_paths,
-                v_dirs,
-                len(conductors),
-                v_conductors,
-                v_split_paths,
-                v_split_dirs,
-                description,
-            )
-
-            result: dict[str, Any] = {
-                "status": "created",
-                "type": "bundle",
-                "num_paths": len(paths),
-                "num_conductors": len(conductors),
-                "description": description,
-            }
-
-            with contextlib.suppress(Exception):
-                result["name"] = bundle.Name
-
-            return result
-        except Exception as e:
-            _logger.error(f"Failed to add bundle: {e}")
-            return error_result(e)
+        return self._add_group(
+            "bundle",
+            path_indices,
+            path_directions,
+            conductor_indices,
+            split_path_indices,
+            split_path_directions,
+            description,
+            path_points,
+        )
