@@ -268,10 +268,10 @@ def simplify(
 ) -> dict[str, Any]:
     """Simplify the model for downstream use (lighter assembly representation).
 
-    Every method is unsupported: Models.AddAutoSimplify, AddSimplifyEnclosure,
-    AddSimplifyDuplicate and AddLocalSimplifyEnclosure all need an array of
-    assembly occurrences or topology proxies from a user selection, which
-    cannot be built here. Simplify the model in the Solid Edge UI.
+    auto: in an assembly, builds its simplified representation from every
+    occurrence; a part is refused. The other methods are unsupported:
+    AddSimplifyEnclosure, AddSimplifyDuplicate and AddLocalSimplifyEnclosure
+    need assembly occurrences or topology proxies from a user selection.
     """
     match method:
         case "auto":

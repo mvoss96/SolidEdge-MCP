@@ -2034,12 +2034,31 @@ class TestThickenSurface:
 
 
 class TestSimplify:
-    def test_auto_simplify_unsupported(self, feature_mgr, managers):
-        _, _, _, models, _, _ = managers
+    def test_auto_simplify_refuses_a_part(self, feature_mgr, managers):
+        _, _, doc, models, _, _ = managers
+        doc.Type = 1  # igPartDocument
         result = feature_mgr.auto_simplify()
         assert result["unsupported"] is True
         assert "occurrences" in result["error"]
         models.AddAutoSimplify.assert_not_called()
+
+    def test_auto_simplify_builds_the_simplified_assembly(self, feature_mgr, managers):
+        _, _, doc, _, _, _ = managers
+        doc.Type = 3  # igAssemblyDocument
+        first, second = MagicMock(), MagicMock()
+        doc.Occurrences.Count = 2
+        doc.Occurrences.Item.side_effect = lambda i: [None, first, second][i]
+        doc.IsAssemblySimplified = True
+
+        result = feature_mgr.auto_simplify()
+
+        assert result == {
+            "status": "created",
+            "type": "simplified_assembly",
+            "occurrences": 2,
+            "simplified": True,
+        }
+        doc.CreateOrEditSimplifiedAssembly.assert_called_once_with(0, [], 0.0, 2, [first, second])
 
     def test_simplify_enclosure_unsupported(self, feature_mgr, managers):
         _, _, _, models, _, _ = managers

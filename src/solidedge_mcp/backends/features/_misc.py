@@ -9,6 +9,7 @@ from solidedge_mcp.backends.errors import error_result
 from ..comutil import com_get
 from ..constants import (
     DirectionConstants,
+    DocumentTypeConstants,
     FaceQueryConstants,
     FaceRotateConstants,
     ModelingModeConstants,
@@ -232,23 +233,45 @@ class MiscFeaturesMixin:
             return error_result(e)
 
     def auto_simplify(self) -> dict[str, Any]:
-        """
-        Auto-simplify the model.
+        """Build the simplified representation of the active assembly.
 
-        NOT AVAILABLE via COM automation. Models.AddAutoSimplify(numInputs,
-        Occurrences, vbRemoveInternals, BodyName) needs an array of assembly
-        occurrences, which a part document cannot supply. The call is never made.
+        In an assembly this calls AssemblyDocument.CreateOrEditSimplifiedAssembly
+        with every occurrence included and no size cut-off; IsAssemblySimplified
+        turns True (Solid Edge 2026). A part is refused: Models.AddAutoSimplify
+        wants assembly occurrences, and given the model's own Body it took the
+        Solid Edge process down.
         """
-        return {
-            "error": (
-                "Auto-simplify is not available through this server: "
-                "Models.AddAutoSimplify(numInputs, Occurrences, vbRemoveInternals, "
-                "BodyName) wants an array of occurrences, and given the model's own "
-                "Body it took the Solid Edge 2026 process down (RPC_S_CALL_FAILED, "
-                "then the server gone). Simplify the model in the Solid Edge UI."
-            ),
-            "unsupported": True,
-        }
+        try:
+            doc = self.doc_manager.get_active_document()
+            if com_get(doc, "Type") not in (
+                DocumentTypeConstants.igAssemblyDocument,
+                DocumentTypeConstants.igWeldmentAssemblyDocument,
+            ):
+                return {
+                    "error": (
+                        "Auto-simplify works on an assembly here (its simplified "
+                        "representation). In a part, Models.AddAutoSimplify wants "
+                        "assembly occurrences, and given the model's own Body it took "
+                        "the Solid Edge 2026 process down. Simplify a part in the "
+                        "Solid Edge UI."
+                    ),
+                    "unsupported": True,
+                }
+            occurrences = doc.Occurrences
+            included = [occurrences.Item(i) for i in range(1, occurrences.Count + 1)]
+            if not included:
+                return {"error": "The assembly has no occurrences to simplify."}
+            # CreateOrEditSimplifiedAssembly(NumOccurrenceExclude, OccurrenceExclude,
+            #   dExcludeRangeRatio, NumOccurrenceInclude, OccurrenceInclude)
+            doc.CreateOrEditSimplifiedAssembly(0, [], 0.0, len(included), included)
+            return {
+                "status": "created",
+                "type": "simplified_assembly",
+                "occurrences": len(included),
+                "simplified": bool(com_get(doc, "IsAssemblySimplified", False)),
+            }
+        except Exception as e:
+            return error_result(e)
 
     def simplify_enclosure(self) -> dict[str, Any]:
         """

@@ -148,7 +148,7 @@ question on this install:
 
 | tool / method | evidence |
 |---|---|
-| `simplify(method="auto")` | `Models.AddAutoSimplify(1, [model.Body], True, "")` took the Solid Edge 2026 process down (RPC_S_CALL_FAILED, then the server gone); the parameter wants occurrences. Refuses before COM. |
+| `simplify(method="auto")` | `Models.AddAutoSimplify(1, [model.Body], True, "")` took the Solid Edge 2026 process down (RPC_S_CALL_FAILED, then the server gone); the parameter wants occurrences. In a part it still refuses before COM; in an assembly it now builds the simplified representation (below). |
 | `create_blend` | `Blends.Add(1, SelectSetArray, RadiusArray, ...)` answers `E_FAIL` with nested edge arrays plain or VARIANT-wrapped, one edge or a face's four (Solid Edge 2026). `create_round` takes the same edges through `Rounds.Add`. Refuses before COM. |
 | `create_thread` (basic, physical) | `Threads.Add(HoleData, 1, [cylinder], [end face])` answers `E_INVALIDARG` for an extruded boss and for a cut hole alike, with every `HoleData` this server can build -- including one the online reference's route fills in (`Standard = "ISO Metric"`, `Size`, `ThreadDataByDescription`, a depth method and depth) and every adjacent end face. The Siemens developer community reports the same since 2016 ("NOTHING WORKED" across VB.NET and C++ array shapes; advice: file an incident) -- [Parameters for Threads.Add Method](https://community.sw.siemens.com/s/question/0D54O000061xqWfSAI/parameters-for-threadsadd-method). Retried 2026-10-19 in ordered and synchronous parts: the end as a face or an edge, the arrays as `VT_ARRAY` of `VT_DISPATCH`/`VT_UNKNOWN`/`VT_VARIANT` (also by reference) through raw `Invoke`, `AddEx` alike; in `Training/Pin1.par` even the `HoleData` of the UI-made `Thread_1` is refused for every cylinder/face pair, so the `HoleData` is not the cause. The refusal used to point at `create_hole(method='threaded')`, which does not exist; it now names the UI Thread command. Refuses before COM. |
 | `create_contour_flange` (sync, sync_with_bend, sync_ex) | `ContourFlanges.AddSync`, `AddSyncByBendDeductionOrBendAllowance` and `AddSyncEx` all answer `E_INVALIDARG` in a synchronous document with the open line from the tab edge on the perpendicular base plane. Refuse before COM. |
@@ -272,6 +272,9 @@ through a few documents. It goes through `SweptSurfaces.AddEx`, the call
 `method='ex'` already made (coordinate-array origins, `OriginRefs` `None`):
 three builds in fresh documents late in a long session, plus the integration
 test, all solved, no crash.
+`simplify(method='auto')` in an assembly calls
+`AssemblyDocument.CreateOrEditSimplifiedAssembly(0, [], 0.0, n, occurrences)`
+with every occurrence included: `IsAssemblySimplified` goes False -> True.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

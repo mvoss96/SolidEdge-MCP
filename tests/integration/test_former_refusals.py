@@ -186,3 +186,16 @@ class TestWire:
         assert r.get("status") == "created", r
         assert doc.Paths.Count == 1
         assert doc.Harnesses.Item(1).Wires.Count == 1
+
+
+class TestAutoSimplify:
+    def test_an_assembly_gets_its_simplified_representation(self, stack, saved_part, new_assembly):
+        for _ in range(2):
+            assert "error" not in stack.assembly.add_component(str(saved_part))
+        doc = stack.doc.get_active_document()
+        assert doc.IsAssemblySimplified is False
+
+        r = stack.feature.auto_simplify()
+
+        assert r.get("status") == "created", r
+        assert doc.IsAssemblySimplified is True

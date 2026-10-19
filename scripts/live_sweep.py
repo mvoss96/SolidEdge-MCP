@@ -459,7 +459,8 @@ CASES: list[Case] = [
     Case("manage_feature", {"action": "rename", "index": 0, "new_name": "Base"}, "box"),
     Case("manage_feature", {"action": "delete", "feature_name": "Round_1"}, "box_round", "by name"),
     Case("manage_feature", {"action": "delete"}, "box", "no target is refused"),
-    Case("simplify", {"method": "auto"}, "box"),
+    Case("simplify", {"method": "auto"}, "box", "refuses a part"),
+    Case("simplify", {"method": "auto"}, "asm", "simplified assembly"),
     Case("edit_feature_extent", {"property": "get_direction1", "feature_name": F}, "box"),
     # sheet metal
     Case(
