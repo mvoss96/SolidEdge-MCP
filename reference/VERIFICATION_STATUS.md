@@ -1,6 +1,6 @@
 # Verification Status
 
-**Last measured: 2026-09-18**, against Solid Edge 2026 (226.00.01.04), branch `modernize`.
+**Last measured: 2026-10-19**, against Solid Edge 2026 (226.00.01.04), branch `fix/unsupported-tools`.
 
 Regenerate every number here with the commands in [How to re-measure](#how-to-re-measure).
 Nothing in this document is an estimate.
@@ -26,8 +26,8 @@ So this document tracks the other question: **does it actually do what it says?*
 |---|---|---|
 | Tools | 119 | the MCP action surface |
 | Resources | 53 + 2 guides | read-only `solidedge://` endpoints |
-| Unit tests | 3,015 (12 skip) | mocked COM; catch shape, not truth |
-| Integration tests | 80 | drive real Solid Edge; 19 pin exact values against a known box, 7 pin the wrong-member and lost-value fixes, 11 pin the synchronous flange, the split, the thicken, the slot, the bead, the lofted flange and the mirror only the volume can see, 5 pin 3D sketch lines, structural frames along them (both methods) and planar relations through References, and there are assembly, draft and sheet-metal fixtures |
+| Unit tests | 3,023 (12 skip) | mocked COM; catch shape, not truth |
+| Integration tests | 105 | drive real Solid Edge; 16 in `test_former_refusals.py` pin tools that used to refuse; 19 pin exact values against a known box, 7 pin the wrong-member and lost-value fixes, 11 pin the synchronous flange, the split, the thicken, the slot, the bead, the lofted flange and the mirror only the volume can see, 5 pin 3D sketch lines, structural frames along them (both methods) and planar relations through References, and there are assembly, draft and sheet-metal fixtures |
 | Structural audits | 7 | all at zero but one documented finding |
 
 ### Creator verification
@@ -44,13 +44,13 @@ which succeeds and builds nothing.
 
 | | count | |
 |---|---|---|
-| Verified live | **165** | the body or the target collection must change, or the result becomes an error |
-| Refuse honestly | 48 | return `unsupported: True` -- 45 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
+| Verified live | **176** | the body or the target collection must change, or the result becomes an error |
+| Refuse honestly | 37 | return `unsupported: True` -- 34 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
 | Neither | **0** | |
 | **Total `create_*`** | **213** | |
 
-Of the 165, 118 are face-count checks and 47 are collection-growth checks:
-15 reference planes (`RefPlanes`), 11 surfaces (the five `Constructions.*Surfaces`
+Of the 176, 126 are face-count checks and 50 are collection-growth checks:
+15 reference planes (`RefPlanes`), 14 surfaces (the five `Constructions.*Surfaces`
 summed), 1 split (`Models.*.Splits`, because the first model keeps its faces), 9 that reshape or annotate (`Models.*.Etches`, `.Threads`, `.Drafts`,
 `.FaceRotates`; `PartsLists`, `DraftBendTables`), 3 surface blends
 (`Models.*.Rounds` + `.Blends`), 2 sketches (`ProfileSets`), and 6 document
@@ -142,7 +142,10 @@ own deliberate probes -- a missing macro, a plane asked for NURBS data -- each
 answered with an explanation. Seven earlier FAIL rows were the sweep's
 inputs, not the tools (a planar face for `delete_blend`, a circle where a
 louver needs a line, a constraint without its elements, ...); they were
-corrected so the record separates the two. What the sweep and the probes
+corrected so the record separates the two. The run of 2026-10-19 on `fix/unsupported-tools`:
+**133 OK, 6 refuse honestly, 3 FAIL, 0 NOOP** across 142 cases; the three
+FAILs are the same deliberate probes (a missing macro, `manage_feature`
+without a target, a plane asked for NURBS data). What the sweep and the probes
 behind it leave as known-broken, each with the evidence that closes the
 question on this install:
 
