@@ -1,5 +1,6 @@
 """Reference plane creation operations."""
 
+import math
 from typing import Any
 
 from solidedge_mcp.backends.errors import error_result
@@ -345,41 +346,61 @@ class RefPlaneMixin:
             return error_result(e)
 
     def create_ref_plane_by_angle(
-        self, parent_plane_index: int, angle: float, normal_side: str = "Normal"
+        self,
+        parent_plane_index: int,
+        angle: float,
+        normal_side: str = "Normal",
+        pivot_plane_index: int = 0,
     ) -> dict[str, Any]:
         """
         Create a reference plane at an angle to an existing plane.
 
-        NOT AVAILABLE via COM automation. The real signature is
-        AddAngularByAngle(ParentPlane, Angle, NormalSide, Pivot, PivotOrigin,
-        [Local]). Pivot is the linear element the new plane rotates about (an
-        edge or reference axis, with PivotOrigin naming its start or end), and
-        that is a user selection this server cannot make. Guessing a pivot would
-        put the plane at the wrong place, so the call is never made.
+        RefPlanes.AddAngularByAngle(ParentPlane, Angle, NormalSide, Pivot,
+        PivotOrigin): the new plane turns about the line where the Pivot plane
+        meets the parent. A RefPlane as pivot builds the plane (Solid Edge 2026).
 
         Args:
-            parent_plane_index: Index of parent plane (1=Top/XY, 2=Right/YZ, 3=Front/XZ)
+            parent_plane_index: 1-based index of the plane the angle is measured from
             angle: Angle in degrees from the parent plane
-            normal_side: 'Normal' (igRight=2) or 'Reverse' (igLeft=1)
+            normal_side: 'Normal' (igNormalSide) or 'Reverse' (igReverseNormalSide)
+            pivot_plane_index: 1-based index of the plane to rotate about
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and new plane index
         """
-        return {
-            "error": (
-                "Angular reference planes are not available through this server: "
-                "RefPlanes.AddAngularByAngle needs a Pivot linear element (an "
-                "edge or reference axis) to rotate about, which cannot be "
-                "selected here. Use create_ref_plane(method='by_offset') or "
-                "create the angled plane in the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "reference_plane",
-            "method": "angular_by_angle",
-            "parent_plane": parent_plane_index,
-            "angle_degrees": angle,
-            "normal_side": normal_side,
-        }
+        try:
+            ref_planes = self.doc_manager.get_active_document().RefPlanes
+            for label, index in (("parent", parent_plane_index), ("pivot", pivot_plane_index)):
+                if index < 1 or index > ref_planes.Count:
+                    return {
+                        "error": f"Invalid {label} plane index: {index}. Count: {ref_planes.Count}"
+                    }
+            if pivot_plane_index == parent_plane_index:
+                return {"error": "The pivot plane must differ from the parent plane."}
+            side = (
+                ReferenceElementConstants.igReverseNormalSide
+                if normal_side == "Reverse"
+                else ReferenceElementConstants.igNormalSide
+            )
+            ref_planes.AddAngularByAngle(
+                ref_planes.Item(parent_plane_index),
+                math.radians(angle),
+                side,
+                ref_planes.Item(pivot_plane_index),
+                ReferenceElementConstants.igPivotEnd,
+            )
+            return {
+                "status": "created",
+                "type": "reference_plane",
+                "method": "angular_by_angle",
+                "parent_plane": parent_plane_index,
+                "pivot_plane": pivot_plane_index,
+                "angle_degrees": angle,
+                "normal_side": normal_side,
+                "new_plane_index": ref_planes.Count,
+            }
+        except Exception as e:
+            return error_result(e)
 
     def create_ref_plane_by_3_points(
         self,
@@ -394,14 +415,11 @@ class RefPlaneMixin:
         z3: float,
     ) -> dict[str, Any]:
         """
-        Create a reference plane through 3 points in space.
+        Create a reference plane through three vertices of the body.
 
-        NOT AVAILABLE via COM automation. AddBy3Points does not take nine
-        coordinates: its real signature is (NumEdges, EdgeSet,
-        KeyPointTypeConstants, [Local]), so the plane is built through three
-        keypoints of existing edges rather than through free XYZ points. This
-        server has no way to turn coordinates into those edge keypoints, so the
-        call is never made.
+        RefPlanes.AddBy3Points(NumEdges, EdgeSet, KeyPointTypes) takes edge
+        keypoints, not coordinates, so each point is matched to the start or end
+        of a body edge (within 1e-7 m).
 
         Args:
             x1, y1, z1: First point coordinates (meters)
@@ -409,24 +427,45 @@ class RefPlaneMixin:
             x3, y3, z3: Third point coordinates (meters)
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and new plane index
         """
-        return {
-            "error": (
-                "A reference plane through three free points is not available "
-                "through this server: RefPlanes.AddBy3Points(NumEdges, EdgeSet, "
-                "KeyPointTypeConstants) builds the plane from keypoints of "
-                "existing edges, not from XYZ coordinates. Use "
-                "create_ref_plane(method='by_offset') or place the plane in the "
-                "Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "reference_plane",
-            "method": "by_3_points",
-            "point1": [x1, y1, z1],
-            "point2": [x2, y2, z2],
-            "point3": [x3, y3, z3],
-        }
+        try:
+            doc = self.doc_manager.get_active_document()
+            if doc.Models.Count == 0:
+                return {"error": "Three-point planes go through body vertices; there is no body."}
+            edges = doc.Models.Item(1).Body.Edges(FaceQueryConstants.igQueryAll)
+            ends = []
+            for i in range(1, edges.Count + 1):
+                edge = edges.Item(i)
+                start, end = edge.GetEndPoints([0.0] * 3, [0.0] * 3)
+                ends.append((edge, KeyPointTypeConstants.igKeyPointStart, start))
+                ends.append((edge, KeyPointTypeConstants.igKeyPointEnd, end))
+            picks = []
+            for n, point in enumerate(((x1, y1, z1), (x2, y2, z2), (x3, y3, z3)), start=1):
+                match = next(
+                    (
+                        (edge, key)
+                        for edge, key, at in ends
+                        if all(abs(a - b) <= 1e-7 for a, b in zip(at, point, strict=True))
+                    ),
+                    None,
+                )
+                if match is None:
+                    return {"error": f"Point {n} {list(point)} is not a vertex of the body."}
+                picks.append(match)
+            ref_planes = doc.RefPlanes
+            ref_planes.AddBy3Points(3, [p[0] for p in picks], [p[1] for p in picks])
+            return {
+                "status": "created",
+                "type": "reference_plane",
+                "method": "by_3_points",
+                "point1": [x1, y1, z1],
+                "point2": [x2, y2, z2],
+                "point3": [x3, y3, z3],
+                "new_plane_index": ref_planes.Count,
+            }
+        except Exception as e:
+            return error_result(e)
 
     def create_ref_plane_midplane(self, plane1_index: int, plane2_index: int) -> dict[str, Any]:
         """

@@ -107,31 +107,46 @@ class TestRefPlaneNormalToCurve:
 
 
 class TestRefPlaneByAngle:
-    """AddAngularByAngle needs a Pivot linear element to rotate about."""
+    """AddAngularByAngle turns the plane about where a pivot plane meets the parent."""
 
-    def test_unsupported(self, feature_mgr, managers):
+    def test_rotates_about_the_pivot_plane(self, feature_mgr, managers):
+        import math
+
         _, _, doc, _, _, _ = managers
         ref_planes = MagicMock()
         ref_planes.Count = 4
+        planes = {i: MagicMock(name=f"plane{i}") for i in range(1, 5)}
+        ref_planes.Item.side_effect = lambda i: planes[i]
         doc.RefPlanes = ref_planes
 
-        result = feature_mgr.create_ref_plane_by_angle(1, 45.0)
-        assert result["unsupported"] is True
-        assert result["method"] == "angular_by_angle"
-        assert result["angle_degrees"] == 45.0
-        assert "Pivot" in result["error"]
-        ref_planes.AddAngularByAngle.assert_not_called()
+        result = feature_mgr.create_ref_plane_by_angle(1, 30.0, pivot_plane_index=2)
 
-    def test_unsupported_reverse_side(self, feature_mgr, managers):
+        assert result["status"] == "created", result
+        ref_planes.AddAngularByAngle.assert_called_once_with(
+            planes[1],
+            math.radians(30.0),
+            2,
+            planes[2],
+            4,  # igNormalSide, igPivotEnd
+        )
+
+    def test_reverse_side(self, feature_mgr, managers):
         _, _, doc, _, _, _ = managers
-        ref_planes = MagicMock()
-        ref_planes.Count = 4
-        doc.RefPlanes = ref_planes
+        doc.RefPlanes.Count = 3
 
-        result = feature_mgr.create_ref_plane_by_angle(2, 60.0, normal_side="Reverse")
-        assert result["unsupported"] is True
-        assert result["normal_side"] == "Reverse"
-        ref_planes.AddAngularByAngle.assert_not_called()
+        feature_mgr.create_ref_plane_by_angle(2, 60.0, normal_side="Reverse", pivot_plane_index=1)
+
+        assert doc.RefPlanes.AddAngularByAngle.call_args.args[2] == 1  # igReverseNormalSide
+
+    @pytest.mark.parametrize("pivot", [0, 9, 1])
+    def test_a_missing_or_same_pivot_is_an_error(self, feature_mgr, managers, pivot):
+        _, _, doc, _, _, _ = managers
+        doc.RefPlanes.Count = 3
+
+        result = feature_mgr.create_ref_plane_by_angle(1, 45.0, pivot_plane_index=pivot)
+
+        assert "error" in result
+        doc.RefPlanes.AddAngularByAngle.assert_not_called()
 
 
 # ============================================================================
@@ -140,20 +155,38 @@ class TestRefPlaneByAngle:
 
 
 class TestRefPlaneBy3Points:
-    """AddBy3Points builds from edge keypoints, not from XYZ coordinates."""
+    """AddBy3Points takes edge keypoints; each point is matched to an edge end."""
 
-    def test_unsupported(self, feature_mgr, managers):
-        _, _, doc, _, _, _ = managers
-        ref_planes = MagicMock()
-        ref_planes.Count = 4
-        doc.RefPlanes = ref_planes
+    @staticmethod
+    def _edges(model, ends):
+        edges = []
+        for start, end in ends:
+            edge = MagicMock()
+            edge.GetEndPoints.return_value = (start, end)
+            edges.append(edge)
+        collection = MagicMock()
+        collection.Count = len(edges)
+        collection.Item.side_effect = lambda i: edges[i - 1]
+        model.Body.Edges.return_value = collection
+        return edges
 
-        result = feature_mgr.create_ref_plane_by_3_points(0, 0, 0, 0.1, 0, 0, 0, 0.1, 0)
-        assert result["unsupported"] is True
-        assert result["method"] == "by_3_points"
-        assert result["point2"] == [0.1, 0, 0]
-        assert "keypoints" in result["error"]
-        ref_planes.AddBy3Points.assert_not_called()
+    def test_points_become_edge_keypoints(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        e1, e2 = self._edges(model, [((0, 0, 0), (0.1, 0, 0)), ((0.1, 0, 0), (0.1, 0.1, 0))])
+
+        result = feature_mgr.create_ref_plane_by_3_points(0, 0, 0, 0.1, 0, 0, 0.1, 0.1, 0)
+
+        assert result["status"] == "created", result
+        doc.RefPlanes.AddBy3Points.assert_called_once_with(3, [e1, e1, e2], [1, 2, 2])
+
+    def test_a_point_that_is_no_vertex_is_refused(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        self._edges(model, [((0, 0, 0), (0.1, 0, 0))])
+
+        result = feature_mgr.create_ref_plane_by_3_points(0, 0, 0, 0.1, 0, 0, 0.5, 0.5, 0.5)
+
+        assert "Point 3" in result["error"]
+        doc.RefPlanes.AddBy3Points.assert_not_called()
 
 
 # ============================================================================

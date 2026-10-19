@@ -23,17 +23,18 @@ def create_ref_plane(
     z3: float = 0.0,
     plane1_index: int = 0,
     plane2_index: int = 0,
+    pivot_plane_index: int = 0,
 ) -> dict[str, Any]:
     """Create a reference plane from a basic geometric definition.
 
     distance and coordinates in meters; angle in degrees. Plane indices are
     1-based (1=Top/XY, 2=Right/YZ, 3=Front/XZ, 4+ = user planes).
     offset: parent_plane_index + distance + normal_side.
+    angle: parent_plane_index + angle + normal_side, turned about the line
+    where pivot_plane_index meets the parent (e.g. parent 1, pivot 2 tilts
+    the Top plane about the Y axis).
+    three_points: (x1,y1,z1)..(x3,y3,z3), each a vertex of the body.
     midplane: required plane1_index and plane2_index, both 1-based.
-    'angle' (unsupported: RefPlanes.AddAngularByAngle needs a Pivot linear
-    element to rotate about) and 'three_points' (unsupported: AddBy3Points
-    builds the plane from keypoints of existing edges, not XYZ coordinates);
-    use 'offset', or place the plane in the Solid Edge UI.
     """
     err = validate_numerics(
         distance=distance,
@@ -57,7 +58,10 @@ def create_ref_plane(
             )
         case "angle":
             return feature_manager.create_ref_plane_by_angle(
-                parent_plane_index=parent_plane_index, angle=angle, normal_side=normal_side
+                parent_plane_index=parent_plane_index,
+                angle=angle,
+                normal_side=normal_side,
+                pivot_plane_index=pivot_plane_index,
             )
         case "three_points":
             return feature_manager.create_ref_plane_by_3_points(

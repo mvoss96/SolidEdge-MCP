@@ -217,3 +217,46 @@ class TestAutoSimplify:
 
         assert r.get("status") == "created", r
         assert doc.IsAssemblySimplified is True
+
+
+def _top_face_index(stack):
+    faces = stack.doc.get_active_document().Models.Item(1).Body.Faces(1)
+    best = None
+    for i in range(1, faces.Count + 1):
+        lo, hi = faces.Item(i).GetRange([0.0] * 3, [0.0] * 3)
+        if abs(lo[2] - hi[2]) < 1e-9 and (best is None or lo[2] > best[0]):
+            best = (lo[2], i - 1)
+    return best[1]
+
+
+def _sketch_on_top(stack, height=0.03):
+    plane = stack.feature.create_ref_plane_by_offset(1, height, "Normal")
+    assert plane.get("status") == "created", plane
+    sketch = stack.sketch.create_sketch_on_plane_index(plane["new_plane_index"])
+    assert sketch["status"] == "created"
+
+
+class TestAngularAndThreePointPlanes:
+    def test_a_plane_turns_about_a_pivot_plane(self, stack, new_part):
+        planes = stack.doc.get_active_document().RefPlanes
+        before = planes.Count
+
+        r = stack.feature.create_ref_plane_by_angle(1, 30.0, pivot_plane_index=2)
+
+        assert r.get("status") == "created", r
+        assert planes.Count == before + 1
+
+    def test_a_plane_through_three_body_vertices(self, stack, new_part):
+        _box(stack)
+        planes = stack.doc.get_active_document().RefPlanes
+        before = planes.Count
+
+        r = stack.feature.create_ref_plane_by_3_points(0, 0, 0.03, 0.08, 0, 0.03, 0, 0.048, 0.03)
+
+        assert r.get("status") == "created", r
+        assert planes.Count == before + 1
+
+    def test_a_point_off_the_body_is_refused(self, stack, new_part):
+        _box(stack)
+        r = stack.feature.create_ref_plane_by_3_points(0, 0, 0.03, 0.08, 0, 0.03, 0.5, 0.5, 0.5)
+        assert "not a vertex" in r["error"]
