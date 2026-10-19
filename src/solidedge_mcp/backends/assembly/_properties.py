@@ -5,6 +5,7 @@ from typing import Any
 
 from solidedge_mcp.backends.errors import error_result
 
+from ..constants import AssemblyRelationConstants
 from ..logging import get_logger
 from ._base import com_get
 
@@ -149,19 +150,32 @@ class PropertiesMixin:
                 relations.AddGround(occurrence)
                 return {"status": "grounded", "component_index": component_index}
             else:
-                # Find and delete ground relation for this occurrence
+                # A ground relation reports Type igGroundRelation3d, and its
+                # Occurrence says which component it fixes. Verified on Solid
+                # Edge 2026; proxies are compared by Name, not by identity.
+                name = com_get(occurrence, "Name")
                 relations = doc.Relations3d
+                grounds = []
                 for i in range(relations.Count, 0, -1):
-                    try:
-                        rel = relations.Item(i)
-                        # Ground relations have Type = 0
-                        if com_get(rel, "Type") == 0:
-                            rel.Delete()
-                            return {"status": "ungrounded", "component_index": component_index}
-                    except Exception:
+                    rel = relations.Item(i)
+                    if com_get(rel, "Type") != AssemblyRelationConstants.igGroundRelation3d:
                         continue
+                    if name and com_get(com_get(rel, "Occurrence"), "Name") == name:
+                        grounds.append(rel)
 
-                return {"error": "No ground relation found for this component"}
+                if not grounds:
+                    return {
+                        "error": f"No ground relation found for component {component_index}",
+                        "component_name": name,
+                    }
+                for rel in grounds:
+                    rel.Delete()
+                return {
+                    "status": "ungrounded",
+                    "component_index": component_index,
+                    "component_name": name,
+                    "relations_deleted": len(grounds),
+                }
         except Exception as e:
             return error_result(e)
 

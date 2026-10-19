@@ -143,7 +143,10 @@ def manage_component(
     occurrence of that file rather than this one. suppress: suppress flag
     (suppress=False is unsupported - COM offers no way back to the
     SuppressComponent object; unsuppress in the Solid Edge UI).
-    reorder: target_index. swap_family: new_member_name. ground: ground flag.
+    reorder: target_index. swap_family: new_member_name. ground: ground=True
+    adds a ground relation, ground=False deletes this component's ground
+    relation (placed components start grounded, so relations do not move them
+    until it is removed).
     pattern: linear copies via count, spacing (meters), direction X/Y/Z.
     mirror: plane_index is 1-based (1=Top/XY, 2=Right/YZ, 3=Front/XZ).
     """

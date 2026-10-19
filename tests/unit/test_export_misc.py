@@ -252,6 +252,69 @@ class TestGroundComponent:
         result = am.ground_component(99, True)
         assert "error" in result
 
+    @staticmethod
+    def _relation(rel_type, occurrence_name):
+        rel = MagicMock()
+        rel.Type = rel_type
+        rel.Occurrence.Name = occurrence_name
+        return rel
+
+    def _set_relations(self, rels, items):
+        rels.Count = len(items)
+        rels.Item.side_effect = lambda i: items[i - 1]
+
+    def test_unground_deletes_only_the_ground_of_this_component(self, asm_mgr):
+        from solidedge_mcp.backends.constants import AssemblyRelationConstants
+
+        am, doc, occ, rels = asm_mgr
+        occ.Name = "rahmen.par:1"
+        ground = AssemblyRelationConstants.igGroundRelation3d
+        other_ground = self._relation(ground, "gabel.par:1")
+        planar = self._relation(AssemblyRelationConstants.igPlanarRelation3d, "rahmen.par:1")
+        own_ground = self._relation(ground, "rahmen.par:1")
+        self._set_relations(rels, [other_ground, planar, own_ground])
+
+        result = am.ground_component(0, False)
+
+        assert result["status"] == "ungrounded"
+        assert result["relations_deleted"] == 1
+        own_ground.Delete.assert_called_once_with()
+        other_ground.Delete.assert_not_called()
+        planar.Delete.assert_not_called()
+
+    def test_type_zero_is_not_a_ground_relation(self, asm_mgr):
+        am, doc, occ, rels = asm_mgr
+        occ.Name = "rahmen.par:1"
+        typeless = self._relation(0, "rahmen.par:1")
+        self._set_relations(rels, [typeless])
+
+        result = am.ground_component(0, False)
+
+        assert "error" in result
+        typeless.Delete.assert_not_called()
+
+    def test_unground_without_a_ground_relation_is_an_error(self, asm_mgr):
+        am, doc, occ, rels = asm_mgr
+        occ.Name = "rahmen.par:1"
+        self._set_relations(rels, [])
+
+        result = am.ground_component(0, False)
+
+        assert "error" in result
+
+    def test_a_failed_delete_is_reported(self, asm_mgr):
+        from solidedge_mcp.backends.constants import AssemblyRelationConstants
+
+        am, doc, occ, rels = asm_mgr
+        occ.Name = "rahmen.par:1"
+        own_ground = self._relation(AssemblyRelationConstants.igGroundRelation3d, "rahmen.par:1")
+        own_ground.Delete.side_effect = Exception("refused")
+        self._set_relations(rels, [own_ground])
+
+        result = am.ground_component(0, False)
+
+        assert "error" in result
+
 
 # ============================================================================
 # ASSEMBLY: REPLACE COMPONENT
