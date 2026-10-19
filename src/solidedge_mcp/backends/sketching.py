@@ -217,8 +217,8 @@ def _offset_side_point(profile: Any, distance: float) -> tuple[float, float] | N
 
 
 def _keypoint_xy(obj: Any, kind: str, keypoint: int) -> tuple[float, float]:
-    """Coordinates of a Relations2d keypoint: line 0/1/2 = start/end/middle, arc 0/1/2 =
-    centre/start/end, circle 0 = centre."""
+    """Coordinates of a keypoint: line 0/1 = start/end, arc 0/1/2 = centre/start/end,
+    circle 0 = centre."""
     members = {
         "line": ("GetStartPoint", "GetEndPoint"),
         "ref": ("GetStartPoint", "GetEndPoint"),
@@ -227,8 +227,6 @@ def _keypoint_xy(obj: Any, kind: str, keypoint: int) -> tuple[float, float]:
     }.get(kind)
     if members is None:
         raise ValueError(f"Keypoints of a {kind} cannot be dimensioned.")
-    if kind in ("line", "ref") and keypoint == 2:
-        return _line_midpoint(obj)
     if keypoint < 0 or keypoint >= len(members):
         raise ValueError(f"A {kind} has no keypoint {keypoint}.")
     point = _xy(obj, members[keypoint])
