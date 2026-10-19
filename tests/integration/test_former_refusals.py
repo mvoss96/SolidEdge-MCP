@@ -172,3 +172,17 @@ class TestLoftedSurface:
         assert r.get("status") == "created", r
         assert surfaces.Count == 1
         assert surfaces.Item(1).Status[0] == 1216476310  # igFeatureOK
+
+
+class TestWire:
+    def test_a_wire_runs_along_a_path_through_space_points(self, stack, saved_part, new_assembly):
+        assert "error" not in stack.assembly.add_component(str(saved_part))
+        doc = stack.doc.get_active_document()
+
+        r = stack.assembly.add_wire(
+            [], [], "W1", path_points=[[0.0, 0.0, 0.05], [0.1, 0.0, 0.05], [0.1, 0.05, 0.05]]
+        )
+
+        assert r.get("status") == "created", r
+        assert doc.Paths.Count == 1
+        assert doc.Harnesses.Item(1).Wires.Count == 1

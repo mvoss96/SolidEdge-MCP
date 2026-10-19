@@ -10,6 +10,11 @@ from win32com.client import VARIANT
 from solidedge_mcp.backends.errors import error_result
 
 from ..comutil import com_get
+from ..constants import (
+    KeypointEndConditionConstants,
+    KeyPointTypeConstants,
+    PointTypeConstants,
+)
 from ..dialogs import dismiss_informational_dialog
 from ..features._base import verifies_collection_growth
 from ..logging import get_logger
@@ -528,37 +533,71 @@ class SpecializedMixin:
         path_indices: list[int],
         path_directions: list[bool],
         description: str = "",
+        path_points: list[list[float]] | None = None,
     ) -> dict[str, Any]:
+        """Add a wire to the assembly's harness along harness paths.
+
+        Wires.Add(NumberOfPaths, PathArray, PathDirectionArray,
+        ConductorDescription) routes along AssemblyDocument.Paths entries;
+        occurrences and 3D sketch lines answer E_FAIL (Solid Edge 2026).
+        path_indices are 0-based indices into AssemblyDocument.Paths.
+        path_points (x, y, z in meters, two or more) first makes a path through
+        those space points with Paths.Add; that call answers E_INVALIDARG
+        unless EndpointEndType is passed as well.
         """
-        Add a wire to the assembly wiring harness.
+        try:
+            doc = self.doc_manager.get_active_document()
+            err = self._require_assembly(doc)
+            if err:
+                return err
+            harness_paths = doc.Paths
+            paths: list[Any] = []
+            directions = list(path_directions)
+            if path_points:
+                if path_indices:
+                    return {"error": "Pass path_points or path_indices, not both."}
+                if len(path_points) < 2 or any(len(pt) != 3 for pt in path_points):
+                    return {"error": "path_points needs two or more [x, y, z] points."}
+                n = len(path_points)
+                natural = KeypointEndConditionConstants.seKeypointEndConditionNatural
+                paths.append(
+                    harness_paths.Add(
+                        n,
+                        [PointTypeConstants.igSpacePoint] * n,
+                        [None] * n,
+                        [KeyPointTypeConstants.igKeyPointPointOnly] * n,
+                        [float(c) for pt in path_points for c in pt],
+                        natural,
+                        natural,
+                    )
+                )
+                directions = directions or [True]
+            else:
+                for idx in path_indices:
+                    if idx < 0 or idx >= harness_paths.Count:
+                        return {
+                            "error": f"Invalid path index: {idx}. "
+                            f"The assembly has {harness_paths.Count} harness paths."
+                        }
+                    paths.append(harness_paths.Item(idx + 1))
+            if not paths:
+                return {"error": "A wire needs path_points or path_indices."}
+            if len(directions) != len(paths):
+                return {"error": "path_directions needs one entry per path."}
 
-        Uses Wires.Add with VARIANT-wrapped path and direction arrays.
-
-        Args:
-            path_indices: 0-based indices of occurrences defining the wire path
-            path_directions: Direction booleans for each path segment
-                (True=forward, False=reverse)
-            description: Description text for the wire
-
-        Returns:
-            Dict with status and wire info
-        """
-        # Wires.Add(NumberOfPaths, PathArray, PathDirectionArray,
-        # ConductorDescription) wants wire-path curves in PathArray: 3D
-        # sketch segments this server cannot draw, the same gap that keeps
-        # structural frames out. This method handed it occurrences instead
-        # and Solid Edge 2026 answered E_FAIL. Say so, without the call.
-        return {
-            "error": (
-                "Wires.Add answers E_FAIL on Solid Edge 2026 given occurrences and "
-                "given a 3D sketch line drawn with draw_3d_line alike. Route wires in "
-                "the Solid Edge UI (Wire Harness Design)."
-            ),
-            "unsupported": True,
-            "path_indices": path_indices,
-            "path_directions": path_directions,
-            "description": description,
-        }
+            harness, err = self._active_harness(doc)
+            if err:
+                return err
+            wire = harness.Wires.Add(len(paths), paths, directions, description)
+            return {
+                "status": "created",
+                "type": "wire",
+                "name": com_get(wire, "Name"),
+                "num_paths": len(paths),
+                "description": description,
+            }
+        except Exception as e:
+            return error_result(e)
 
     # -- Cables --------------------------------------------------------------
 

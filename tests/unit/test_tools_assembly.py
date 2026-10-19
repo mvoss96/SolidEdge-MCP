@@ -514,7 +514,7 @@ class TestWiring:
         mock_mgr.add_wire.return_value = {"status": "ok"}
         wiring(type="wire")
         mock_mgr.add_wire.assert_called_once_with(
-            path_indices=[], path_directions=[], description=""
+            path_indices=[], path_directions=[], description="", path_points=None
         )
 
     def test_splice_defaults_empty_conductors(self, mock_mgr):

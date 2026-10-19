@@ -490,6 +490,22 @@ class KeyPointTypeConstants:
     igKeyPointStart = 1
     igKeyPointEnd = 2
     igKeyPointCenter = 4
+    igKeyPointPointOnly = 64
+
+
+class PointTypeConstants:
+    """constant.tlb > PointTypeConstants: the point kinds of AssemblyDocument.Paths.Add."""
+
+    igSpacePoint = 0
+    igKeyPoint = 1
+    igCylinderStartPoint = 2
+    igCylinderEndPoint = 3
+
+
+class KeypointEndConditionConstants:
+    """constant.tlb > KeypointEndConditionConstants."""
+
+    seKeypointEndConditionNatural = 1
 
 
 class ReferenceElementConstants:

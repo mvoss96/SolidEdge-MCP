@@ -633,7 +633,11 @@ CASES: list[Case] = [
         {"method": "by_orientation", "part_filename": str(BOX), "path_indices": [0]},
         "asm_lines",
     ),
-    Case("wiring", {"type": "wire", "path_indices": [0], "path_directions": [True]}, "asm"),
+    Case(
+        "wiring",
+        {"type": "wire", "path_points": [[0.0, 0.0, 0.05], [0.1, 0.0, 0.05]]},
+        "asm",
+    ),
     # draft
     Case("manage_sheet", {"action": "add"}, "draft"),
     Case("query_sheet", {"type": "dimensions"}, "draft"),

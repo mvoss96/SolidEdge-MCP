@@ -156,7 +156,6 @@ question on this install:
 | `create_contour_flange` (ex) | `ContourFlanges.AddEx` and `Add` answer `E_FAIL` to 52 open-profile placements: from the tab's corner and from the interior of an edge, on the base planes and on planes perpendicular to the edge, both projection sides. Refuses before COM. |
 | `create_bounded_surface` | `BlueSurfs.Add` answers `E_INVALIDARG` to profiles from `ProfileSets` (all this server's sketches) whatever `Origins` holds, typed or through raw `Invoke` with by-reference `SAFEARRAY(VT_DISPATCH)`. With profiles from `doc.Sketches` it builds two circles (`igNatural` tangents, no guides, `Status` OK) and answers `E_FAIL` for two rectangles, with or without keypoint relations and line origins (2026-10-19). Re-adding the bounded surface of `Training/JigSaw/JS-0023.PAR` from its own sections answers `E_FAIL`. Refuses before COM and points at `create_lofted_surface`. |
 | `create_swept_surface` | builds on a fresh instance once `Origins=[element]` and `OriginRefs=keypoint` (`comutil.profile_origin_element` records the shape; `None` for both is the `E_FAIL` it used to return) -- and took the Solid Edge process down on 3 of 5 calls once a session had been through a few documents. A crash is worse than a refusal; refuses before COM. |
-| `wiring(type="wire")` | `Wires.Add` answers `E_FAIL` given occurrences and given a 3D sketch line drawn with `draw_3d_line` alike (Solid Edge 2026). Refuses before COM. |
 | `create_primitive_cutout` in an ordered part | `CylinderFeatures.AddCutoutByCenterAndRadius` and `BoxFeatures.AddCutoutByCenter` answer `E_INVALIDARG` in an ordered part with every `ProfileSide`/`ExtentSide`, and still do after `ModelingMode` is switched to synchronous (a synchronous feature does not cut ordered geometry; the same call cuts a synchronous box, 6 -> 7 faces). Solid Edge has no ordered primitive. Refuses before COM and names `create_extruded_cutout` / `create_revolved_cutout`; the refusal no longer mentions an `allow_mode_switch` parameter no tool has. |
 | `create_assembly_swept_protrusion` | `E_INVALIDARG` with `Origins` as inner VARIANTs (the shape the part-level sweep needs) and `E_FAIL` as plain tuples or lists; the argument shape is not the cause. |
 
@@ -260,6 +259,14 @@ reported.
 pywin32 marshals as an array of VARIANTs. As `VARIANT(VT_ARRAY | VT_I4, ...)`
 the call builds a solved surface from two circles (`Status` igFeatureOK), with
 the coordinate origins `create_loft` uses and `igNone` extents and tangents.
+`wiring(type='wire')`: `Wires.Add` routes along `AssemblyDocument.Paths`
+entries (harness paths); occurrences and 3D sketch lines answer `E_FAIL`.
+`Paths.Add(n, [igSpacePoint]*n, [None]*n, [igKeyPointPointOnly]*n, xyz...,
+seKeypointEndConditionNatural, seKeypointEndConditionNatural)` makes a path
+through space points (without the optional `EndpointEndType` it answers
+`E_INVALIDARG`), and `Harness.Wires.Add(1, [path], [True], "")` adds the wire.
+The tool takes `path_points`; `path_indices` now index `AssemblyDocument.Paths`.
+`cable` and `bundle` still pass occurrences as paths and were not retried.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

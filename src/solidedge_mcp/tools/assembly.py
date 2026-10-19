@@ -870,10 +870,13 @@ def wiring(
     x: float = 0,
     y: float = 0,
     z: float = 0,
+    path_points: list[list[float]] | None = None,
 ) -> dict[str, Any]:
     """Create wire-harness elements in the assembly.
 
-    wire: path_indices + path_directions. cable: + wire_indices.
+    wire: path_points ([x, y, z] in meters, two or more) makes a harness path
+    through them and routes the wire along it; or path_indices into the
+    assembly's existing harness paths + path_directions. cable: + wire_indices.
     bundle: + conductor_indices. Both may take split_path_indices/directions.
     splice: x,y,z (meters) + conductor_indices. All indices 0-based.
     """
@@ -886,6 +889,7 @@ def wiring(
                 path_indices=path_indices or [],
                 path_directions=path_directions or [],
                 description=description,
+                path_points=path_points,
             )
         case "cable":
             return assembly_manager.add_cable(

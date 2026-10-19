@@ -401,26 +401,57 @@ class TestAddSplice:
 
 
 class TestAddWire:
-    """Wires.Add wants wire-path curves this server cannot draw; no call is made."""
+    """Wires route along AssemblyDocument.Paths; occurrences answer E_FAIL."""
 
-    def test_refuses_with_the_evidence(self, asm_mgr):
-        am, doc = asm_mgr
-        wires = MagicMock()
+    @staticmethod
+    def _harness(doc):
         harness = MagicMock()
-        harness.Wires = wires
-        harnesses = MagicMock()
-        harnesses.Count = 1
-        harnesses.Item.return_value = harness
-        doc.Harnesses = harnesses
+        doc.Harnesses.Count = 1
+        doc.Harnesses.Item.return_value = harness
+        return harness
 
-        result = am.add_wire([0, 1], [True, False], "Test wire")
+    def test_path_points_make_a_path_and_route_the_wire_along_it(self, asm_mgr):
+        am, doc = asm_mgr
+        harness = self._harness(doc)
+        path = doc.Paths.Add.return_value
 
-        assert result["unsupported"] is True
-        assert "draw_3d_line" in result["error"]
-        assert result["path_indices"] == [0, 1]
-        assert result["description"] == "Test wire"
-        wires.Add.assert_not_called()
+        result = am.add_wire([], [], "W1", path_points=[[0, 0, 0.05], [0.1, 0, 0.05]])
+
+        assert result["status"] == "created", result
+        doc.Paths.Add.assert_called_once_with(
+            2, [0, 0], [None, None], [64, 64], [0.0, 0.0, 0.05, 0.1, 0.0, 0.05], 1, 1
+        )
+        harness.Wires.Add.assert_called_once_with(1, [path], [True], "W1")
         doc.Occurrences.Item.assert_not_called()
+
+    def test_path_indices_name_existing_harness_paths(self, asm_mgr):
+        am, doc = asm_mgr
+        harness = self._harness(doc)
+        doc.Paths.Count = 2
+        first, second = MagicMock(), MagicMock()
+        doc.Paths.Item.side_effect = lambda i: [None, first, second][i]
+
+        am.add_wire([1, 0], [True, False])
+
+        harness.Wires.Add.assert_called_once_with(2, [second, first], [True, False], "")
+
+    def test_a_bad_path_index_is_an_error(self, asm_mgr):
+        am, doc = asm_mgr
+        harness = self._harness(doc)
+        doc.Paths.Count = 0
+
+        result = am.add_wire([0], [True])
+
+        assert "harness paths" in result["error"]
+        harness.Wires.Add.assert_not_called()
+
+    def test_one_point_is_not_a_path(self, asm_mgr):
+        am, doc = asm_mgr
+
+        result = am.add_wire([], [], path_points=[[0, 0, 0]])
+
+        assert "two or more" in result["error"]
+        doc.Paths.Add.assert_not_called()
 
 
 # ============================================================================
