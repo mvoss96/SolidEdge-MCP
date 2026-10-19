@@ -63,7 +63,7 @@ def manage_variable(
     name: str = "",
     value: float | None = None,
     formula: str | None = None,
-    units_type: str | None = None,
+    units_type: int | str | None = None,
     new_name: str | None = None,
     pattern: str = "*",
     case_insensitive: bool = True,
@@ -76,9 +76,17 @@ def manage_variable(
     template "0.025" means 0.025 inch, so write "25 mm" to mean 25 mm. The
     result reports the value Solid Edge computed. A constant formula is stored
     as a value and reads back with an empty formula; only expressions such as
-    "Width * 2" survive as formulas.
+    "Width * 2" survive as formulas. Formula syntax: + - * / ^, sqr() for the
+    square root, sin/cos/atn in radians.
+    units_type (add, add_from_clipboard): 1/"length", 2/"angle" (degrees),
+    58/"scalar".
     rename: name + new_name. query: wildcard pattern [+ case_insensitive].
     translate/copy_clipboard/add_from_clipboard: name [+ units_type].
+    Linking a variable from another saved part: activate that part,
+    copy_clipboard(name), activate the target, add_from_clipboard(name,
+    units_type); the formula then reads @'path'!'id'. In an assembly,
+    assembly_feature(type="recompute") pulls changed values into the parts
+    only if the source part is itself an occurrence of that assembly.
     """
     match action:
         case "set":

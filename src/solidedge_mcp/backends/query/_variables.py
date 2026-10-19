@@ -4,7 +4,7 @@ import contextlib
 import math
 from typing import Any
 
-from solidedge_mcp.backends.errors import describe_exception, error_result
+from solidedge_mcp.backends.errors import com_hresult, describe_exception, error_result
 
 from ..comutil import com_get
 from ..constants import UnitTypeConstants, VariableNameBy, seVariableTypeConstants
@@ -22,6 +22,50 @@ _UNIT_TYPE_NAMES: dict[int, str] = {
     UnitTypeConstants.igUnitVolume: "volume",
     UnitTypeConstants.igUnitScalar: "scalar",
 }
+
+
+#: Unit names a caller may use for Variables.Add / AddFromClipboard.
+_UNITS_BY_NAME: dict[str, int] = {
+    "length": UnitTypeConstants.igUnitDistance,
+    "distance": UnitTypeConstants.igUnitDistance,
+    "angle": UnitTypeConstants.igUnitAngle,
+    "scalar": UnitTypeConstants.igUnitScalar,
+}
+
+
+def _units_arg(units_type: int | str | None) -> int | None:
+    """UnitTypeConstants value for a units argument given as a number or a name.
+
+    Raises:
+        ValueError: for a name that is neither a number nor in _UNITS_BY_NAME
+    """
+    if units_type is None or isinstance(units_type, int):
+        return units_type
+    text = units_type.strip().lower()
+    if text.isdigit():
+        return int(text)
+    if text in _UNITS_BY_NAME:
+        return _UNITS_BY_NAME[text]
+    raise ValueError(
+        f"Unknown units_type {units_type!r}: use 1/'length', 2/'angle' or 58/'scalar'."
+    )
+
+
+#: winerror.h CLIPBRD_E_CANT_OPEN: OpenClipboard failed.
+_CLIPBOARD_BUSY = 0x800401D0
+
+
+def _clipboard_error(exc: BaseException) -> dict[str, Any]:
+    """error_result for a clipboard call, naming a clipboard another program holds open."""
+    if com_hresult(exc) == _CLIPBOARD_BUSY:
+        return error_result(
+            exc,
+            context=(
+                "Solid Edge could not open the Windows clipboard; another program "
+                "holds it open. Close that program or retry"
+            ),
+        )
+    return error_result(exc)
 
 
 def _is_angle(var: Any) -> bool:
@@ -173,7 +217,7 @@ class VariablesMixin:
             return error_result(e)
 
     def add_variable(
-        self, name: str, formula: str, units_type: str | None = None
+        self, name: str, formula: str, units_type: int | str | None = None
     ) -> dict[str, Any]:
         """
         Create a new user variable in the active document.
@@ -195,27 +239,32 @@ class VariablesMixin:
             name: Variable name (e.g., 'MyWidth', 'BoltDiameter')
             formula: Formula or value as a string. Give the unit -- "25 mm",
                 not "0.025" -- unless you mean document units.
-            units_type: Optional units type string
+            units_type: UnitTypeConstants value or name: 1/'length' (formula
+                numbers in document units, mm), 2/'angle' (degrees), 58/'scalar'
 
         Returns:
             Dict with status and variable info
         """
         try:
+            units = _units_arg(units_type)
             doc = self.doc_manager.get_active_document()
             variables = doc.Variables
 
-            if units_type is not None:
-                var = variables.Add(name, formula, units_type)
+            if units is not None:
+                var = variables.Add(name, formula, units)
             else:
                 var = variables.Add(name, formula)
 
-            result = {"status": "created", "name": name, "formula": formula}
+            result: dict[str, Any] = {"status": "created", "name": name, "formula": formula}
             with contextlib.suppress(Exception):
                 result["value"] = var.Value
             with contextlib.suppress(Exception):
                 result["display_name"] = var.DisplayName
+            result.update(_units_of(var))
 
             return result
+        except ValueError as e:
+            return {"error": str(e)}
         except Exception as e:
             return error_result(e)
 
@@ -515,39 +564,46 @@ class VariablesMixin:
             variables.CopyToClipboard(name)
             return {"status": "copied", "name": name}
         except Exception as e:
-            return error_result(e)
+            return _clipboard_error(e)
 
     def add_variable_from_clipboard(
-        self, name: str, units_type: str | None = None
+        self, name: str, units_type: int | str | None = None
     ) -> dict[str, Any]:
         """
         Add a variable from the clipboard.
 
         Uses Variables.AddFromClipboard(name) or AddFromClipboard(name, units).
         The variable must have been previously copied with copy_variable_to_clipboard.
+        Copied from another saved document, the new variable is linked to it
+        and its formula reads @'path'!'id'.
 
         Args:
             name: Name for the new variable
-            units_type: Optional units type string
+            units_type: UnitTypeConstants value or name, as for add_variable
 
         Returns:
             Dict with status and variable info
         """
         try:
+            units = _units_arg(units_type)
             doc = self.doc_manager.get_active_document()
             variables = doc.Variables
 
-            if units_type:
-                new_var = variables.AddFromClipboard(name, units_type)
+            if units is not None:
+                new_var = variables.AddFromClipboard(name, units)
             else:
                 new_var = variables.AddFromClipboard(name)
 
-            result = {"status": "added", "name": name}
+            result: dict[str, Any] = {"status": "added", "name": name}
             with contextlib.suppress(Exception):
                 result["value"] = new_var.Value
+            with contextlib.suppress(Exception):
+                result["formula"] = variables.GetFormula(name)
             return result
+        except ValueError as e:
+            return {"error": str(e)}
         except Exception as e:
-            return error_result(e)
+            return _clipboard_error(e)
 
     # =================================================================
     # CUSTOM PROPERTIES

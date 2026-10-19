@@ -137,9 +137,26 @@ class TestAddVariable:
         variables.Add.return_value = new_var
         doc.Variables = variables
 
-        result = qm.add_variable("BoltDia", "0.01", units_type="m")
+        result = qm.add_variable("BoltDia", "10", units_type="length")
         assert result["status"] == "created"
-        variables.Add.assert_called_once_with("BoltDia", "0.01", "m")
+        variables.Add.assert_called_once_with("BoltDia", "10", 1)
+
+    @pytest.mark.parametrize(
+        ("given", "sent"), [(1, 1), ("2", 2), ("angle", 2), ("Scalar", 58), (58, 58)]
+    )
+    def test_units_go_in_as_unit_type_constants(self, query_mgr, given, sent):
+        qm, doc = query_mgr
+        doc.Variables.Add.return_value = MagicMock(Value=1.0)
+
+        qm.add_variable("X", "1", units_type=given)
+
+        doc.Variables.Add.assert_called_once_with("X", "1", sent)
+
+    def test_an_unknown_unit_name_is_refused_before_com(self, query_mgr):
+        qm, doc = query_mgr
+        result = qm.add_variable("X", "1", units_type="m")
+        assert "Unknown units_type" in result["error"]
+        doc.Variables.Add.assert_not_called()
 
     def test_formula_expression(self, query_mgr):
         qm, doc = query_mgr
@@ -523,9 +540,11 @@ class TestAddVariableFromClipboard:
         variables.AddFromClipboard.return_value = new_var
         doc.Variables = variables
 
-        result = qm.add_variable_from_clipboard("PastedDia", units_type="m")
+        variables.GetFormula.return_value = "@'C:\base.par'!'W'"
+        result = qm.add_variable_from_clipboard("PastedDia", units_type="length")
         assert result["status"] == "added"
-        variables.AddFromClipboard.assert_called_once_with("PastedDia", "m")
+        assert result["formula"].startswith("@")
+        variables.AddFromClipboard.assert_called_once_with("PastedDia", 1)
 
     def test_com_error(self, query_mgr):
         qm, doc = query_mgr
@@ -765,3 +784,22 @@ class TestVariableUnits:
         qm.set_variable("Width", 0.5)
 
         assert var.Value == 0.5
+
+
+class TestClipboardBusy:
+    def test_a_clipboard_held_by_another_program_is_named(self):
+        import pywintypes
+
+        from solidedge_mcp.backends.query import QueryManager
+
+        dm = MagicMock()
+        qm = QueryManager(dm)
+        exc = pywintypes.com_error(
+            -2147352567, "Exception occurred.", (0, None, None, None, 0, -2147221040), None
+        )
+        dm.get_active_document.return_value.Variables.CopyToClipboard.side_effect = exc
+
+        result = qm.copy_variable_to_clipboard("W")
+
+        assert "clipboard" in result["error"]
+        assert result["hresult"] == "0x800401D0"
