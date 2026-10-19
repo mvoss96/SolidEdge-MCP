@@ -550,23 +550,27 @@ def create_reinforcement(
     type: Literal["rib", "lip"] = "rib",
     thickness: float = 0.0,
     direction: Literal["Normal", "Reverse", "Symmetric"] = "Normal",
+    width: float = 0.0,
+    face_index: int | None = None,
+    edge_index: int = 0,
 ) -> dict[str, Any]:
-    """Create a reinforcement from the active sketch: a rib or a lip.
+    """Create a rib from the active sketch, or a lip along a body edge.
 
-    thickness in meters (the lip uses it as the lip depth). direction is the
-    side material is added to; 'Symmetric' is accepted by 'rib' only.
-    'lip' (unsupported: Lips.Add needs the body edges to run the lip along
-    plus a side face and a cap face, which cannot be selected here); use
-    'rib', or add the lip in the Solid Edge UI.
+    Meters; indices 0-based. rib: thickness, direction (the side material is
+    added to; 'Symmetric' accepted). lip: along edge edge_index of face
+    face_index (the cap face), thickness = lip height, width = lip width;
+    no sketch needed.
     """
-    err = validate_numerics(thickness=thickness)
+    err = validate_numerics(thickness=thickness, width=width)
     if err:
         return err
     match type:
         case "rib":
             return feature_manager.create_rib(thickness=thickness, direction=direction)
         case "lip":
-            return feature_manager.create_lip(depth=thickness)
+            return feature_manager.create_lip(
+                depth=thickness, width=width, face_index=face_index, edge_index=edge_index
+            )
         case _:
             return {"error": f"Unknown type: {type}"}
 

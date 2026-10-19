@@ -139,36 +139,50 @@ class RoundsChamfersMixin:
         self,
         radii: list[float],
         face_index: int | None = None,
+        edge_index: int = 0,
     ) -> dict[str, Any]:
         """
-        Create a variable-radius round (fillet) on body edges.
+        Round one edge with a radius that runs from its start to its end vertex.
 
-        NOT AVAILABLE via COM automation. Rounds.AddVariable takes
-        (NumberOfEdgeSets, EdgeSetArray, NumberOfVertices, VertexArray,
-        VertexRadiusArray, ...): the radii are per-vertex, and the VertexArray
-        holds the vertex objects at which each radius applies. This server has
-        no way to pick those vertices, so the call is never made.
+        Rounds.AddVariable(1, [edge], 2, [StartVertex, EndVertex], [r_start,
+        r_end]) builds it (Solid Edge 2026).
 
         Args:
-            radii: List of radius values in meters
-            face_index: 0-based face index to apply to (None = all edges)
+            radii: [radius at the start vertex, radius at the end vertex], meters
+            face_index: 0-based face that holds the edge
+            edge_index: 0-based edge of that face
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and round info
         """
-        return {
-            "error": (
-                "Variable-radius rounds are not available through this server: "
-                "Rounds.AddVariable needs a VertexArray naming the vertices each "
-                "radius applies to, which cannot be selected here. Use "
-                "create_round (constant radius) or add the variable round in the "
-                "Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "variable_round",
-            "radii": list(radii),
-            "face_index": face_index,
-        }
+        if len(radii) != 2 or any(r <= 0 for r in radii):
+            return {"error": "radii needs two positive radii: [at the start, at the end]."}
+        if face_index is None:
+            return {"error": "A variable round needs face_index and edge_index."}
+        try:
+            models = self.doc_manager.get_active_document().Models
+            if models.Count == 0:
+                return {"error": "No features exist to add rounds to"}
+            model = models.Item(1)
+            faces = model.Body.Faces(FaceQueryConstants.igQueryAll)
+            if face_index < 0 or face_index >= faces.Count:
+                return {"error": f"Invalid face index: {face_index}. Body has {faces.Count} faces."}
+            edges = faces.Item(face_index + 1).Edges
+            if edge_index < 0 or edge_index >= edges.Count:
+                return {"error": f"Invalid edge index: {edge_index}. Face has {edges.Count} edges."}
+            edge = edges.Item(edge_index + 1)
+            model.Rounds.AddVariable(
+                1, [edge], 2, [edge.StartVertex, edge.EndVertex], [float(r) for r in radii]
+            )
+            return {
+                "status": "created",
+                "type": "variable_round",
+                "radii": list(radii),
+                "face_index": face_index,
+                "edge_index": edge_index,
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_chamfer(self, distance: float) -> dict[str, Any]:

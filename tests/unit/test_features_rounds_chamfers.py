@@ -303,22 +303,30 @@ class TestChamferAngle:
 
 
 class TestVariableRound:
-    """Rounds.AddVariable takes per-vertex radii and a VertexArray."""
+    """Rounds.AddVariable takes the edge, its two vertices and a radius at each."""
 
-    def test_unsupported(self, feature_mgr, managers):
+    def test_one_edge_from_its_start_radius_to_its_end_radius(self, feature_mgr, managers):
         _, _, _, _, model, _ = managers
-        result = feature_mgr.create_variable_round([0.001, 0.002])
-        assert result["unsupported"] is True
-        assert result["type"] == "variable_round"
-        assert result["radii"] == [0.001, 0.002]
-        assert "VertexArray" in result["error"]
+        edge = model.Body.Faces.return_value.Item.return_value.Edges.Item(2)
+
+        result = feature_mgr.create_variable_round([0.001, 0.003], face_index=0, edge_index=1)
+
+        assert result["status"] == "created", result
+        model.Rounds.AddVariable.assert_called_once_with(
+            1, [edge], 2, [edge.StartVertex, edge.EndVertex], [0.001, 0.003]
+        )
+
+    @pytest.mark.parametrize("radii", [[0.001], [0.001, 0.0], [0.001, 0.002, 0.003]])
+    def test_two_positive_radii_are_needed(self, feature_mgr, managers, radii):
+        _, _, _, _, model, _ = managers
+        result = feature_mgr.create_variable_round(radii, face_index=0)
+        assert "two positive radii" in result["error"]
         model.Rounds.AddVariable.assert_not_called()
 
-    def test_unsupported_on_specific_face(self, feature_mgr, managers):
+    def test_a_bad_edge_index_is_an_error(self, feature_mgr, managers):
         _, _, _, _, model, _ = managers
-        result = feature_mgr.create_variable_round([0.001], face_index=0)
-        assert result["unsupported"] is True
-        assert result["face_index"] == 0
+        result = feature_mgr.create_variable_round([0.001, 0.002], face_index=0, edge_index=5)
+        assert "Invalid edge index" in result["error"]
         model.Rounds.AddVariable.assert_not_called()
 
 

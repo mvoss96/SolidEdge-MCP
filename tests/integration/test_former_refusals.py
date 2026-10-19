@@ -260,3 +260,26 @@ class TestAngularAndThreePointPlanes:
         _box(stack)
         r = stack.feature.create_ref_plane_by_3_points(0, 0, 0.03, 0.08, 0, 0.03, 0.5, 0.5, 0.5)
         assert "not a vertex" in r["error"]
+
+
+class TestVariableRoundAndLip:
+    def test_a_variable_round_removes_material_along_one_edge(self, stack, new_part):
+        _box(stack)
+        before = _volume(stack)
+
+        r = stack.feature.create_variable_round(
+            [0.002, 0.006], face_index=_top_face_index(stack), edge_index=0
+        )
+
+        assert r.get("status") == "created", r
+        assert _volume(stack) < before
+
+    def test_a_lip_adds_edge_length_times_its_section(self, stack, new_part):
+        _box(stack)
+        before = _volume(stack)
+
+        r = stack.feature.create_lip(0.003, width=0.002, face_index=_top_face_index(stack))
+
+        assert r.get("status") == "created", r
+        added = _volume(stack) - before
+        assert added in (pytest.approx(0.08 * 6e-6), pytest.approx(0.048 * 6e-6))

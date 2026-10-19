@@ -320,17 +320,26 @@ class TestCreateRib:
 
 
 class TestCreateLip:
-    """Lips.Add needs body edges plus a side face and a cap face."""
+    """Lips.Add takes the edge, the edge's other face as side and the cap face."""
 
-    def test_unsupported(self, feature_mgr, managers):
+    def test_runs_along_the_edge_of_the_cap_face(self, feature_mgr, managers):
         _, _, _, _, model, _ = managers
-        lips = MagicMock()
-        model.Lips = lips
-        result = feature_mgr.create_lip(0.003)
-        assert result["unsupported"] is True
-        assert result["depth"] == 0.003
-        assert "cap face" in result["error"]
-        lips.Add.assert_not_called()
+        cap = model.Body.Faces.return_value.Item.return_value
+        cap.ID = 7
+        edge = cap.Edges.Item(1)
+        side = MagicMock(ID=9)
+        edge.GetFaces.return_value = (2, (cap, side))
+
+        result = feature_mgr.create_lip(0.003, width=0.002, face_index=0, edge_index=0)
+
+        assert result["status"] == "created", result
+        model.Lips.Add.assert_called_once_with(1, [edge], side, cap, 0.002, 0.003)
+
+    def test_needs_a_face_and_a_width(self, feature_mgr, managers):
+        _, _, _, _, model, _ = managers
+        assert "face_index" in feature_mgr.create_lip(0.003, width=0.002)["error"]
+        assert "width" in feature_mgr.create_lip(0.003, face_index=0)["error"]
+        model.Lips.Add.assert_not_called()
 
 
 # ============================================================================

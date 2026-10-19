@@ -13,15 +13,15 @@ def create_round(
     radii: list[float] | None = None,
     face_index1: int = 0,
     face_index2: int = 0,
+    edge_index: int = 0,
 ) -> dict[str, Any]:
     """Round (fillet) edges of the active solid body.
 
-    radius and radii in meters; all face indices are 0-based.
+    radius and radii in meters; all face and edge indices are 0-based.
     all_edges: radius on every edge. on_face: radius on the edges of
-    face_index. blend / surface_blend: radius between face_index1 and
-    face_index2. 'variable' (unsupported: Rounds.AddVariable needs a
-    VertexArray naming the vertices each radius applies to, which cannot be
-    selected here); use a constant-radius method.
+    face_index. variable: edge edge_index of face face_index, radii =
+    [radius at its start vertex, radius at its end vertex].
+    blend / surface_blend: radius between face_index1 and face_index2.
     """
     err = validate_numerics(radius=radius)
     if err:
@@ -32,7 +32,9 @@ def create_round(
         case "on_face":
             return feature_manager.create_round_on_face(radius=radius, face_index=face_index or 0)
         case "variable":
-            return feature_manager.create_variable_round(radii=radii or [], face_index=face_index)
+            return feature_manager.create_variable_round(
+                radii=radii or [], face_index=face_index, edge_index=edge_index
+            )
         case "blend":
             return feature_manager.create_round_blend(
                 face_index1=face_index1, face_index2=face_index2, radius=radius

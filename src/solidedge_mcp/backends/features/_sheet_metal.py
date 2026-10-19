@@ -784,34 +784,58 @@ class SheetMetalMixin:
             return error_result(e)
 
     @verifies_geometry
-    def create_lip(self, depth: float, direction: str = "Normal") -> dict[str, Any]:
+    def create_lip(
+        self, depth: float, width: float = 0.0, face_index: int | None = None, edge_index: int = 0
+    ) -> dict[str, Any]:
         """
-        Create a lip feature from the active sketch profile.
+        Add a lip along one edge of a face.
 
-        NOT AVAILABLE via COM automation. Lips.Add takes (NumberOfEdges, Edges,
-        SideFace, CapFace, Width, Height, [Type]) - it is driven by body edges
-        plus a side face and a cap face, not by a sketch profile, and those
-        selections cannot be made here. The call is never made.
+        Lips.Add(NumberOfEdges, Edges, SideFace, CapFace, Width, Height): the
+        cap is the face given, the side face is the edge's other face
+        (Edge.GetFaces). Verified on Solid Edge 2026 on a box edge: the volume
+        grows by edge length x width x height.
 
         Args:
-            depth: Lip depth/height in meters
-            direction: 'Normal' or 'Reverse'
+            depth: Lip height in meters
+            width: Lip width in meters
+            face_index: 0-based cap face
+            edge_index: 0-based edge of that face
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and lip info
         """
-        return {
-            "error": (
-                "Lip features are not available through this server: Lips.Add "
-                "needs the body edges to run the lip along plus a side face and "
-                "a cap face, which cannot be selected here. Create the lip in "
-                "the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "lip",
-            "depth": depth,
-            "direction": direction,
-        }
+        if depth <= 0 or width <= 0:
+            return {"error": "A lip needs a positive height (thickness) and width."}
+        if face_index is None:
+            return {"error": "A lip needs face_index (the cap face) and edge_index."}
+        try:
+            models = self.doc_manager.get_active_document().Models
+            if models.Count == 0:
+                return {"error": "A lip needs a body."}
+            model = models.Item(1)
+            faces = model.Body.Faces(FaceQueryConstants.igQueryAll)
+            if face_index < 0 or face_index >= faces.Count:
+                return {"error": f"Invalid face index: {face_index}. Body has {faces.Count} faces."}
+            cap = faces.Item(face_index + 1)
+            edges = cap.Edges
+            if edge_index < 0 or edge_index >= edges.Count:
+                return {"error": f"Invalid edge index: {edge_index}. Face has {edges.Count} edges."}
+            edge = edges.Item(edge_index + 1)
+            _, neighbours = edge.GetFaces(Faces=[None, None])
+            side = next((f for f in neighbours if f.ID != cap.ID), None)
+            if side is None:
+                return {"error": "The edge has no second face to run the lip along."}
+            model.Lips.Add(1, [edge], side, cap, width, depth)
+            return {
+                "status": "created",
+                "type": "lip",
+                "height": depth,
+                "width": width,
+                "face_index": face_index,
+                "edge_index": edge_index,
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_drawn_cutout(self, depth: float, direction: str = "Normal") -> dict[str, Any]:
