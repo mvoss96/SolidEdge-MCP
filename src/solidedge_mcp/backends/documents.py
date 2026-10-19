@@ -36,6 +36,18 @@ def _missing_template(template: str) -> dict[str, Any]:
     return {"error": f"Template not found: {template}. Nothing was created."}
 
 
+def _add_document(app: Any, prog_id: str, template: str | None) -> Any:
+    """Add a document of prog_id, from template when one is given.
+
+    Documents.Add takes the ProgID first and the template as a Windows path
+    second; a template path alone answers CO_E_CLASSSTRING and forward
+    slashes answer E_INVALIDARG (Solid Edge 2026).
+    """
+    if template:
+        return app.Documents.Add(prog_id, os.path.normpath(os.path.abspath(template)))
+    return app.Documents.Add(prog_id)
+
+
 #: Solid Edge 2026 builds a weldment as an assembly from a weldment template
 #: (WeldmentAssembly = True). The legacy "SolidEdge.WeldmentDocument" ProgID
 #: looks for a .pwd template that is not installed and raises a modal "Path
@@ -82,12 +94,9 @@ class DocumentManager:
         try:
             app = self.connection.get_application()
 
-            if template:
-                if not os.path.exists(template):
-                    return _missing_template(template)
-                doc = app.Documents.Add(template)
-            else:
-                doc = app.Documents.Add("SolidEdge.PartDocument")
+            if template and not os.path.exists(template):
+                return _missing_template(template)
+            doc = _add_document(app, "SolidEdge.PartDocument", template)
 
             self._clear_sketch_state()
             self.active_document = doc
@@ -109,12 +118,9 @@ class DocumentManager:
         try:
             app = self.connection.get_application()
 
-            if template:
-                if not os.path.exists(template):
-                    return _missing_template(template)
-                doc = app.Documents.Add(template)
-            else:
-                doc = app.Documents.Add("SolidEdge.AssemblyDocument")
+            if template and not os.path.exists(template):
+                return _missing_template(template)
+            doc = _add_document(app, "SolidEdge.AssemblyDocument", template)
 
             self._clear_sketch_state()
             self.active_document = doc
@@ -136,12 +142,9 @@ class DocumentManager:
         try:
             app = self.connection.get_application()
 
-            if template:
-                if not os.path.exists(template):
-                    return _missing_template(template)
-                doc = app.Documents.Add(template)
-            else:
-                doc = app.Documents.Add("SolidEdge.SheetMetalDocument")
+            if template and not os.path.exists(template):
+                return _missing_template(template)
+            doc = _add_document(app, "SolidEdge.SheetMetalDocument", template)
 
             self._clear_sketch_state()
             self.active_document = doc
@@ -163,12 +166,9 @@ class DocumentManager:
         try:
             app = self.connection.get_application()
 
-            if template:
-                if not os.path.exists(template):
-                    return _missing_template(template)
-                doc = app.Documents.Add(template)
-            else:
-                doc = app.Documents.Add("SolidEdge.DraftDocument")
+            if template and not os.path.exists(template):
+                return _missing_template(template)
+            doc = _add_document(app, "SolidEdge.DraftDocument", template)
 
             self._clear_sketch_state()
             self.active_document = doc

@@ -99,7 +99,7 @@ class TestCreateDraftDocument:
         result = dm.create_draft(str(template))
 
         assert result["status"] == "created"
-        app.Documents.Add.assert_called_once_with(str(template))
+        app.Documents.Add.assert_called_once_with("SolidEdge.DraftDocument", str(template))
 
     def test_a_template_that_does_not_exist_is_refused_not_ignored(self, doc_mgr):
         """This used to fall through silently to the default draft, so a

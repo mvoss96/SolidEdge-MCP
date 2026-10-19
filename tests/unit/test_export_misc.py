@@ -679,6 +679,29 @@ class TestAMissingTemplateIsNeverSilentlyIgnored:
         assert result["status"] == "created", (creator, result)
         app.Documents.Add.assert_called_once_with(progid)
 
+    @pytest.mark.parametrize(
+        ("creator", "progid"),
+        [
+            ("create_part", "SolidEdge.PartDocument"),
+            ("create_assembly", "SolidEdge.AssemblyDocument"),
+            ("create_sheet_metal", "SolidEdge.SheetMetalDocument"),
+            ("create_draft", "SolidEdge.DraftDocument"),
+        ],
+    )
+    def test_a_template_goes_in_after_the_progid_as_a_windows_path(
+        self, doc_mgr, tmp_path, creator, progid
+    ):
+        """Documents.Add(template) alone answers CO_E_CLASSSTRING."""
+        dm, app = doc_mgr
+        template = tmp_path / "template.xxx"
+        template.write_bytes(b"")
+        app.Documents.Add.return_value = MagicMock(Name="New", FullName="")
+
+        result = getattr(dm, creator)(template=template.as_posix())
+
+        assert result["status"] == "created", (creator, result)
+        app.Documents.Add.assert_called_once_with(progid, str(template))
+
 
 # ============================================================================
 # DOCUMENTS: IMPORT FILE

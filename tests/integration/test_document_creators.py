@@ -99,3 +99,38 @@ class TestAMissingTemplateIsRefused:
         assert "Template not found" in result["error"]
         assert app.Documents.Count == before, "nothing may have been created"
         assert dog.titles == [], dog.titles
+
+
+class TestAnExistingTemplateIsUsed:
+    """Documents.Add(template) alone answered CO_E_CLASSSTRING for every creator."""
+
+    @pytest.mark.parametrize(
+        ("creator", "doc_type"),
+        [
+            ("create_part", 1),  # igPartDocument
+            ("create_assembly", 3),  # igAssemblyDocument
+            ("create_sheet_metal", 4),  # igSheetMetalDocument
+            ("create_draft", 2),  # igDraftDocument
+        ],
+    )
+    def test_the_default_template_builds_its_document(
+        self, stack, solid_edge, preexisting_documents, creator, doc_type
+    ):
+        import os
+
+        from tests.integration.conftest import _scratch_document
+
+        app = solid_edge.get_application()
+        template = str(app.GetDefaultTemplatePath(doc_type))
+        if not os.path.isfile(template):
+            pytest.skip(f"no default template for document type {doc_type}: {template}")
+
+        def create():
+            return getattr(stack.doc, creator)(template=template)
+
+        with (
+            _Watchdog() as dog,
+            _scratch_document(stack.doc, solid_edge, preexisting_documents, create, creator),
+        ):
+            assert stack.doc.get_active_document().Type == doc_type
+        assert dog.titles == [], f"a dialog appeared: {dog.titles}"
