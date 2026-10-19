@@ -105,8 +105,7 @@ def create_blend(
     Radii in meters; all face indices are 0-based.
     basic: radius on face_index. surface: radius (required, must be > 0)
     between face_index1 and face_index2. 'variable' (unsupported:
-    Blends.AddVariable needs a VertexArray naming the vertices each radius
-    applies to, which cannot be selected here); use 'basic' or 'surface'.
+    Blends.AddVariable answers E_POINTER); use create_round(method='variable').
     """
     err = validate_numerics(radius=radius, radius1=radius1, radius2=radius2)
     if err:

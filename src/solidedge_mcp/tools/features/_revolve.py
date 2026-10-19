@@ -26,9 +26,8 @@ def create_revolve(
     angle in degrees (used by all but by_keypoint*). wall_thickness in meters
     (thin_wall). The revolve axis always comes from the sketch: set it with
     manage_sketch(action='set_axis') before closing. 'by_keypoint' and
-    'by_keypoint_sync' are unsupported (they
-    need a KeyPoint or tangent face object this server cannot select); use
-    'full'. 'full_360' only accepts treatment_type='None' -
+    'by_keypoint_sync' are unsupported (the keypoint call answers E_FAIL);
+    use 'finite' or 'full'. 'full_360' only accepts treatment_type='None' -
     RevolvedProtrusions.Add has no draft or crown slots.
     """
     err = validate_numerics(angle=angle, wall_thickness=wall_thickness)

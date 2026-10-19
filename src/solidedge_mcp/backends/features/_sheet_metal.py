@@ -2394,11 +2394,9 @@ class SheetMetalMixin:
         """
         return {
             "error": (
-                "Slot features are not available through this server: "
-                "Slots.AddSync requires 18 arguments including a "
-                "KeyPointOrTangentFace object and From/To extent faces that "
-                "cannot be selected here. Use an extruded cutout, or create the "
-                "slot in the Solid Edge UI."
+                "Slots.AddSync answers E_FAIL on Solid Edge 2026 in a synchronous part, with "
+                "the arguments that make Slots.Add and Slots.AddEx cut in an ordered part. "
+                "Use create_slot(method='basic' or 'ex') in an ordered part."
             ),
             "unsupported": True,
             "type": "slot_sync",

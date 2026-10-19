@@ -469,7 +469,7 @@ class TestCreateBlendVariable:
         assert result["unsupported"] is True
         assert result["radius1"] == 0.001
         assert result["radius2"] == 0.003
-        assert "VertexArray" in result["error"]
+        assert "E_POINTER" in result["error"]
         model.Blends.AddVariable.assert_not_called()
 
     def test_unsupported_on_specific_face(self, feature_mgr, managers):

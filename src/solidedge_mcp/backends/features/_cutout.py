@@ -694,10 +694,11 @@ class CutoutMixin:
         """
         return {
             "error": (
-                "An extruded cutout to a keypoint needs a KeyPoint or tangent face "
-                "object, which this server cannot select. Use "
-                "create_extruded_cutout(distance), create_extruded_cutout_from_to(...) "
-                "or the Solid Edge UI."
+                "Cutting to a keypoint does not work through COM on Solid Edge 2026: "
+                "ExtrudedCutouts.AddFiniteByKeyPointMulti answers E_FAIL with a body vertex, "
+                "edge or face as the keypoint, and with a sketch point it records a feature "
+                "that never solves. Use create_extruded_cutout with the distance to the "
+                "point, or a from/to extent."
             ),
             "unsupported": True,
             "direction": direction,
@@ -769,9 +770,10 @@ class CutoutMixin:
         """
         return {
             "error": (
-                "A revolved cutout to a keypoint needs a KeyPoint or tangent face "
-                "object, which this server cannot select. Use "
-                "create_revolved_cutout(angle) or the Solid Edge UI."
+                "A revolved cutout to a keypoint does not work through COM on Solid Edge "
+                "2026: the keypoint forms of extrusions, cutouts and revolves answer E_FAIL "
+                "with a body vertex, edge or face, and this one takes the same keypoint. Use "
+                "create_revolved_cutout with the angle to the point."
             ),
             "unsupported": True,
         }
@@ -918,9 +920,11 @@ class CutoutMixin:
             del cutouts, side
             return {
                 "error": (
-                    "Normal cutout to a keypoint needs a KeyPoint or tangent face "
-                    "object, which this server cannot select. Use "
-                    "create_normal_cutout(distance) or the Solid Edge UI."
+                    "A normal cutout to a keypoint does not work through COM on Solid Edge "
+                    "2026: NormalCutouts.AddFiniteByKeyPointMulti answers E_FAIL with a body "
+                    "vertex, edge or face as the keypoint, and with a sketch point it records "
+                    "a feature that never solves. Use create_normal_cutout(method='finite') "
+                    "with the distance to the point."
                 ),
                 "unsupported": True,
             }

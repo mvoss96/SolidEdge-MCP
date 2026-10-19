@@ -160,8 +160,7 @@ def create_mirror(
     the part was synchronous). new_file_name
     (absolute .par path) and link_to_original: save_as_part, which needs
     overwrite=true to replace an existing file.
-    'sync_ex' (unsupported: MirrorCopies.AddSyncEx needs an [in,out] SAFEARRAY
-    that COM late binding cannot pass byref); use 'basic'.
+    'sync_ex' (unsupported: MirrorCopies.AddSyncEx answers E_FAIL); use 'basic'.
     """
     if mirror_plane_index < 1:
         return {

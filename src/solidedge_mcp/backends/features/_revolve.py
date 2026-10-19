@@ -322,9 +322,10 @@ class RevolveMixin:
         """
         return {
             "error": (
-                "Revolving to a keypoint needs a KeyPoint or tangent face object, "
-                "which this server cannot select. Use create_revolve(angle) or the "
-                "Solid Edge UI."
+                "Revolving to a keypoint does not work through COM on Solid Edge 2026: "
+                "RevolvedProtrusions.AddFiniteByKeyPoint answers E_FAIL with a body vertex, "
+                "edge or face as the keypoint, and with a sketch point it records a feature "
+                "that never solves. Use create_revolve with the angle to the point."
             ),
             "unsupported": True,
         }
@@ -428,9 +429,10 @@ class RevolveMixin:
         """
         return {
             "error": (
-                "Revolving to a keypoint needs a KeyPoint or tangent face object, "
-                "which this server cannot select. Use create_revolve_sync(angle) or "
-                "the Solid Edge UI."
+                "Revolving to a keypoint does not work through COM on Solid Edge 2026: the "
+                "ordered RevolvedProtrusions.AddFiniteByKeyPoint answers E_FAIL with a body "
+                "vertex, edge or face; the synchronous form takes the same keypoint. Use "
+                "create_revolve_sync with the angle to the point."
             ),
             "unsupported": True,
         }

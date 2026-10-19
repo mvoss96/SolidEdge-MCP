@@ -507,11 +507,9 @@ class RoundsChamfersMixin:
         """
         return {
             "error": (
-                "Variable-radius blends are not available through this server: "
-                "Blends.AddVariable needs a VertexArray naming the vertices each "
-                "radius applies to, which cannot be selected here. Use "
-                "create_round (constant radius) or add the variable blend in the "
-                "Solid Edge UI."
+                "Blends.AddVariable answers E_POINTER on Solid Edge 2026 with one edge, its "
+                "two vertices and two radii, and Blends.Add answers E_FAIL. Use "
+                "create_round(method='variable'), which builds through Rounds.AddVariable."
             ),
             "unsupported": True,
             "type": "blend_variable",

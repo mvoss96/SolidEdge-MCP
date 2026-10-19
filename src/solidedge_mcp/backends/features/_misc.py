@@ -86,9 +86,12 @@ class MiscFeaturesMixin:
         """
         del remove_face_indices  # no COM call to pass them to; see above
         return {
-            "error": "Shell (Thinwalls) feature requires face selection for open faces "
-            "which cannot be reliably automated via COM. Use the Solid Edge UI "
-            "to create shell features.",
+            "error": (
+                "Thinwalls.Add answers E_FAIL on Solid Edge 2026 with the open face as a list "
+                "or as VT_ARRAY | VT_DISPATCH, with or without the unique-thickness "
+                "arguments, on both sides. Hollow the part with an extruded cutout of an "
+                "inset sketch (sketch_modify(action='offset')) instead."
+            ),
             "unsupported": True,
             "thickness": thickness,
         }
@@ -919,10 +922,9 @@ class MiscFeaturesMixin:
         """
         return {
             "error": (
-                "MirrorCopies.AddSyncEx is not usable through COM late binding: "
-                "it needs an [in,out] SAFEARRAY (MirrorFeatures) that cannot be "
-                "passed byref. Use create_mirror (method='basic', "
-                "MirrorCopies.AddSync) instead, or mirror in the Solid Edge UI."
+                "MirrorCopies.AddSyncEx answers E_FAIL on Solid Edge 2026 in a synchronous "
+                "part, with the feature list typed or by keyword with a MirrorFeatures "
+                "buffer. Use create_mirror(method='basic') (MirrorCopies.AddSync / Add)."
             ),
             "unsupported": True,
             "type": "mirror_sync_ex",
@@ -1126,11 +1128,9 @@ class MiscFeaturesMixin:
         """
         return {
             "error": (
-                "Duplicate patterns are not available through this server: "
-                "Patterns.AddDuplicate needs a FromReference object and an array "
-                "of instance references (a user selection) that cannot be built "
-                "here. Use create_pattern(method='rectangular_ex') or duplicate "
-                "the feature in the Solid Edge UI."
+                "Patterns.AddDuplicate answers E_FAIL on Solid Edge 2026 with sketch points "
+                "as FromReference and as instance references. Use create_pattern with "
+                "method='rectangular_ex', 'circular_ex' or 'by_fill'."
             ),
             "unsupported": True,
             "type": "pattern_duplicate",

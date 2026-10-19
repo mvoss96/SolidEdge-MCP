@@ -35,8 +35,8 @@ def create_extrude(
     methods; 1-based (1=Top/XY, 2=Right/YZ, 3=Front/XZ).
     operation applies to 'finite' only: 'Cut' removes material and needs an
     existing base feature; 'Intersect' is unsupported.
-    'by_keypoint' (unsupported: needs a KeyPoint or tangent face object this
-    server cannot select); use 'finite' or 'from_to'.
+    'by_keypoint' (unsupported: the keypoint call answers E_FAIL or builds nothing);
+    use 'finite' or 'from_to'.
     """
     err = validate_numerics(distance=distance, wall_thickness=wall_thickness)
     if err:

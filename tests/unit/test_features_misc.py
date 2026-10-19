@@ -1248,7 +1248,7 @@ class TestCreateSlotSync:
         assert result["unsupported"] is True
         assert result["width"] == 0.005
         assert result["depth"] == 0.01
-        assert "KeyPointOrTangentFace" in result["error"]
+        assert "E_FAIL" in result["error"]
         model.Slots.AddSync.assert_not_called()
 
 

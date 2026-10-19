@@ -552,9 +552,11 @@ class ExtrudeMixin:
         """
         return {
             "error": (
-                "Extruding to a keypoint needs a KeyPoint or tangent face object, "
-                "which this server cannot select. Use create_extrude(distance), "
-                "create_extrude_from_to(...) or the Solid Edge UI."
+                "Extruding to a keypoint does not work through COM on Solid Edge 2026: "
+                "ExtrudedProtrusions.AddFiniteByKeyPoint answers E_FAIL with a body vertex, "
+                "edge or face as the keypoint, and with a sketch point it records a feature "
+                "that never solves. Use create_extrude(method='finite') with the distance to "
+                "the point, or 'from_to'."
             ),
             "unsupported": True,
             "direction": direction,

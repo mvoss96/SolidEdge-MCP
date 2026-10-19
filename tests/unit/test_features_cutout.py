@@ -514,7 +514,7 @@ class TestCreateExtrudedCutoutByKeypoint:
         _, _, _, _, model, _ = managers
         result = feature_mgr.create_extruded_cutout_by_keypoint("Normal")
         assert result["unsupported"] is True
-        assert "KeyPoint" in result["error"]
+        assert "keypoint" in result["error"]
         assert result["direction"] == "Normal"
         model.ExtrudedCutouts.AddFiniteByKeyPointMulti.assert_not_called()
 
@@ -574,7 +574,7 @@ class TestCreateRevolvedCutoutByKeypoint:
         sketch_mgr.get_active_refaxis.return_value = MagicMock()
         result = feature_mgr.create_revolved_cutout_by_keypoint()
         assert result["unsupported"] is True
-        assert "KeyPoint" in result["error"]
+        assert "keypoint" in result["error"]
         model.RevolvedCutouts.AddFiniteByKeyPointMulti.assert_not_called()
 
     def test_no_profile_still_unsupported(self, feature_mgr, managers):
@@ -658,7 +658,7 @@ class TestCreateNormalCutoutByKeypoint:
         _, _, _, _, model, _ = managers
         result = feature_mgr.create_normal_cutout_by_keypoint("Normal")
         assert result["unsupported"] is True
-        assert "KeyPoint" in result["error"]
+        assert "keypoint" in result["error"]
         model.NormalCutouts.AddFiniteByKeyPointMulti.assert_not_called()
 
     def test_no_profile(self, feature_mgr, managers):
