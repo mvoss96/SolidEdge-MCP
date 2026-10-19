@@ -186,7 +186,7 @@ def _assembly_with_faces(doc, n_occurrences=2, radius=None):
         occ = MagicMock(name=f"occ{i}")
         face = MagicMock(name=f"face{i}")
         face.Geometry.Radius = radius
-        face.GetRange.return_value = (0.0, 0.0, float(i), 0.08, 0.048, float(i))
+        face.GetRange.return_value = ((0.0, 0.0, float(i)), (0.08, 0.048, float(i)))
         faces_coll = occ.OccurrenceDocument.Models.Item.return_value.Body.Faces.return_value
         faces_coll.Count = 1
         faces_coll.Item.return_value = face

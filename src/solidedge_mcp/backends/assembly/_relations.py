@@ -9,6 +9,7 @@ from solidedge_mcp.backends.errors import error_result
 from ..constants import FaceQueryConstants
 from ..features._base import verifies_collection_growth
 from ..logging import get_logger
+from ..query._base import r8_array
 from ._base import com_get
 
 _logger = get_logger(__name__)
@@ -69,11 +70,12 @@ class RelationsMixin:
                 )
             }
         reference = doc.CreateReference(occurrence, face)
-        r = face.GetRange([0.0] * 6)
-        flat: list[float] = []
-        for item in r:
-            flat.extend(item if isinstance(item, tuple) else (item,))
-        midpoint = [(flat[0] + flat[3]) / 2, (flat[1] + flat[4]) / 2, (flat[2] + flat[5]) / 2]
+        # Face.GetRange(MinRangePoint, MaxRangePoint) takes two [in,out] 3-element
+        # buffers. A single 6-element list fails with DISP_E_TYPEMISMATCH once
+        # pywin32 hands out type-library wrappers (after any gencache.EnsureDispatch
+        # on this machine), and late-bound it returns a 6-zero tuple as the minimum.
+        low, high = face.GetRange(r8_array(3), r8_array(3))
+        midpoint = [(a + b) / 2 for a, b in zip(low, high)]
         return reference, midpoint
 
     @verifies_collection_growth("Relations3d")
