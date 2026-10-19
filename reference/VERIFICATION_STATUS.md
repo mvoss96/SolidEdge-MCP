@@ -154,7 +154,7 @@ question on this install:
 | `create_contour_flange` (sync, sync_with_bend, sync_ex) | `ContourFlanges.AddSync`, `AddSyncByBendDeductionOrBendAllowance` and `AddSyncEx` all answer `E_INVALIDARG` in a synchronous document with the open line from the tab edge on the perpendicular base plane. Refuse before COM. |
 | `create_louver` (sync) | `Louvers.AddSync` on a synchronous tab's top face answers 0x807B0086. Refuses before COM. |
 | `create_contour_flange` (ex) | `ContourFlanges.AddEx` and `Add` answer `E_FAIL` to 52 open-profile placements: from the tab's corner and from the interior of an edge, on the base planes and on planes perpendicular to the edge, both projection sides. Refuses before COM. |
-| `create_lofted_surface`, `_v2`, `create_bounded_surface` | `LoftedSurfaces.Add` answers `E_INVALIDARG` to 13 argument shapes including the one that builds `Models.AddLoftedProtrusion` from the same two profiles and the one the [online reference](https://support.industrysoftware.automation.siemens.com/trainings/se/106/api/SolidEdgePart~LoftedSurfaces~Add.html) documents (`Origins = 0` per circular section, every extent and tangent `igNone`), on `Sketches`-based profiles as well, `Add2` answers it to the same profiles, and `BlueSurfs.Add` answers it whatever `Origins` holds (the declared dispatch array of section circles, the profiles, `None`). All three refuse before COM. |
+| `create_bounded_surface` | `BlueSurfs.Add` answers `E_INVALIDARG` whatever `Origins` holds (the declared dispatch array of section circles, the profiles, `None`). Refuses before COM. |
 | `create_swept_surface` | builds on a fresh instance once `Origins=[element]` and `OriginRefs=keypoint` (`comutil.profile_origin_element` records the shape; `None` for both is the `E_FAIL` it used to return) -- and took the Solid Edge process down on 3 of 5 calls once a session had been through a few documents. A crash is worse than a refusal; refuses before COM. |
 | `wiring(type="wire")` | `Wires.Add` answers `E_FAIL` given occurrences and given a 3D sketch line drawn with `draw_3d_line` alike (Solid Edge 2026). Refuses before COM. |
 | `create_primitive_cutout` in an ordered part | `CylinderFeatures.AddCutoutByCenterAndRadius` and `BoxFeatures.AddCutoutByCenter` answer `E_INVALIDARG` in an ordered part with every `ProfileSide`/`ExtentSide`, and still do after `ModelingMode` is switched to synchronous (a synchronous feature does not cut ordered geometry; the same call cuts a synchronous box, 6 -> 7 faces). Solid Edge has no ordered primitive. Refuses before COM and names `create_extruded_cutout` / `create_revolved_cutout`; the refusal no longer mentions an `allow_mode_switch` parameter no tool has. |
@@ -255,6 +255,11 @@ and builds from the copy: 6 -> 14 faces on an ordered tab, top or bottom face,
 both height directions. Some depth/height pairs still do not solve (6 mm deep
 and 5.5 mm high, 2 mm and 1 mm, on 1 mm material); that louver is deleted and
 reported.
+`create_lofted_surface` (basic, v2): `LoftedSurfaces.Add`/`Add2` answered
+`E_INVALIDARG` because `CrossSectionTypes` went in as a plain list, which
+pywin32 marshals as an array of VARIANTs. As `VARIANT(VT_ARRAY | VT_I4, ...)`
+the call builds a solved surface from two circles (`Status` igFeatureOK), with
+the coordinate origins `create_loft` uses and `igNone` extents and tangents.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

@@ -150,3 +150,25 @@ class TestLouver:
         louver = doc.Models.Item(1).Louvers.Item(1)
         assert louver.Status[0] == 1216476310  # igFeatureOK
         assert doc.Models.Item(1).Body.Faces(1).Count > faces_before
+
+
+def _two_circle_sections(stack):
+    """Circles of 10 and 15 mm radius on Top and on a plane 30 mm above it."""
+    assert stack.feature.create_ref_plane_by_offset(1, 0.03)["status"] == "created"
+    for plane, radius in ((1, 0.01), (4, 0.015)):
+        stack.sketch.create_sketch_on_plane_index(plane)
+        stack.sketch.draw_circle(0.0, 0.0, radius)
+        stack.sketch.close_sketch()
+
+
+class TestLoftedSurface:
+    @pytest.mark.parametrize("method", ["create_lofted_surface", "create_lofted_surface_v2"])
+    def test_two_circles_give_a_solved_surface(self, stack, new_part, method):
+        _two_circle_sections(stack)
+        surfaces = stack.doc.get_active_document().Constructions.LoftedSurfaces
+
+        r = getattr(stack.feature, method)()
+
+        assert r.get("status") == "created", r
+        assert surfaces.Count == 1
+        assert surfaces.Item(1).Status[0] == 1216476310  # igFeatureOK

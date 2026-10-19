@@ -193,50 +193,61 @@ class SurfacesMixin:
         except Exception as e:
             return error_result(e)
 
-    def create_lofted_surface(self, want_end_caps: bool = False) -> dict[str, Any]:
-        """
-        Create a lofted construction surface between multiple profiles.
+    def _lofted_surface(self, method: str, want_end_caps: bool) -> dict[str, Any]:
+        """LoftedSurfaces.Add or Add2 through the accumulated profiles.
 
-        Uses LoftedSurfaces.Add with accumulated profiles. Same workflow as
-        create_loft: create 2+ sketches on different planes, close each,
-        then call this method.
-
-        Args:
-            want_end_caps: Whether to cap the ends of the surface
-
-        Returns:
-            Dict with status and surface info
+        CrossSectionTypes has to be a VT_ARRAY of VT_I4: a plain list goes in
+        as an array of VARIANTs and the call answers E_INVALIDARG (Solid Edge
+        2026), which is what made every earlier argument shape fail. Origins
+        are the coordinate arrays create_loft uses.
         """
         try:
             doc = self.doc_manager.get_active_document()
-
-            all_profiles = self.sketch_manager.get_accumulated_profiles()
-
-            if len(all_profiles) < 2:
+            profiles = self.sketch_manager.get_accumulated_profiles()
+            if len(profiles) < 2:
                 return {
-                    "error": f"Lofted surface requires at least 2 profiles, "
-                    f"got {len(all_profiles)}."
+                    "error": f"Lofted surface requires at least 2 profiles, got {len(profiles)}."
                 }
-
-            # Constructions.LoftedSurfaces.Add answers E_INVALIDARG to every
-            # argument shape that builds Models.AddLoftedProtrusion from the
-            # same two profiles (Solid Edge 2026: coordinate-array origins,
-            # element origins, VARIANT-wrapped arrays, every extent and tangent
-            # constant, with and without guide curves -- 13 shapes). Say so
-            # rather than raise it.
-            del doc
+            v_profiles, v_types, v_origins = self._make_loft_variant_arrays(profiles)
+            v_types = VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I4, list(v_types))
+            skip = pythoncom.ArgNotFound
+            # Add(NumSections, CrossSections, CrossSectionTypes, Origins,
+            #   StartExtentType, EndExtentType, StartTangentType, StartTangentMagnitude,
+            #   EndTangentType, EndTangentMagnitude, [NumGuideCurves], [GuideCurves],
+            #   [WantEndCaps]); Add2 appends [OutputSurfaceType].
+            getattr(doc.Constructions.LoftedSurfaces, method)(
+                len(profiles),
+                v_profiles,
+                v_types,
+                v_origins,
+                ExtentTypeConstants.igNone,
+                ExtentTypeConstants.igNone,
+                ExtentTypeConstants.igNone,
+                0.0,
+                ExtentTypeConstants.igNone,
+                0.0,
+                skip,
+                skip,
+                want_end_caps,
+            )
+            self.sketch_manager.clear_accumulated_profiles()
             return {
-                "error": (
-                    "LoftedSurfaces.Add rejects every argument form Solid Edge 2026 "
-                    "accepts for a solid loft (E_INVALIDARG). Use create_loft for a "
-                    "solid, or the Solid Edge UI for a lofted surface."
-                ),
-                "unsupported": True,
-                "num_profiles": len(all_profiles),
+                "status": "created",
+                "type": "lofted_surface",
+                "method": method,
+                "num_profiles": len(profiles),
                 "want_end_caps": want_end_caps,
             }
         except Exception as e:
             return error_result(e)
+
+    def create_lofted_surface(self, want_end_caps: bool = False) -> dict[str, Any]:
+        """Create a lofted construction surface through the accumulated profiles.
+
+        Same workflow as create_loft: create 2+ sketches on different planes,
+        close each, then call this method. Uses LoftedSurfaces.Add.
+        """
+        return self._lofted_surface("Add", want_end_caps)
 
     def create_swept_surface(
         self, path_profile_index: int | None = None, want_end_caps: bool = False
@@ -585,35 +596,8 @@ class SurfacesMixin:
             return error_result(e)
 
     def create_lofted_surface_v2(self, want_end_caps: bool = False) -> dict[str, Any]:
-        """
-        Create a lofted surface using the extended Add2 method.
-
-        Uses LoftedSurfaces.Add2 which supports an additional OutputSurfaceType
-        parameter compared to the basic Add method. Requires 2+ accumulated profiles.
-
-        Args:
-            want_end_caps: Whether to cap the ends of the surface
-
-        Returns:
-            Dict with status and surface info
-        """
-        all_profiles = self.sketch_manager.get_accumulated_profiles()
-        if len(all_profiles) < 2:
-            return {
-                "error": f"Lofted surface requires at least 2 profiles, got {len(all_profiles)}."
-            }
-        # LoftedSurfaces.Add2 answers E_INVALIDARG to the same profiles that
-        # Models.AddLoftedProtrusion lofts (Solid Edge 2026), as Add does.
-        return {
-            "error": (
-                "LoftedSurfaces.Add2 rejects the argument form Solid Edge 2026 accepts "
-                "for a solid loft (E_INVALIDARG), as Add does. Use create_loft for a "
-                "solid, or the Solid Edge UI for a lofted surface."
-            ),
-            "unsupported": True,
-            "num_profiles": len(all_profiles),
-            "want_end_caps": want_end_caps,
-        }
+        """Create a lofted surface with LoftedSurfaces.Add2 (Add plus OutputSurfaceType)."""
+        return self._lofted_surface("Add2", want_end_caps)
 
     def create_swept_surface_ex(
         self, path_profile_index: int | None = None, want_end_caps: bool = False

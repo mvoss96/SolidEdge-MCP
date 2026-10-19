@@ -4,7 +4,7 @@ Unit tests for FeatureManager backend methods.
 Uses unittest.mock to simulate COM objects so tests run without Solid Edge.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -166,16 +166,27 @@ class TestRevolvedSurface:
 
 
 class TestLoftedSurface:
-    def test_refuses_with_the_evidence(self, feature_mgr, managers):
-        _, sketch_mgr, doc, _, model, _ = managers
+    """CrossSectionTypes must be a VT_I4 array; a plain list answers E_INVALIDARG."""
+
+    def test_passes_the_section_types_as_an_i4_array(self, feature_mgr, managers):
+        import pythoncom
+
+        _, sketch_mgr, doc, _, _, _ = managers
         p1, p2 = MagicMock(), MagicMock()
         sketch_mgr.get_accumulated_profiles.return_value = [p1, p2]
-        result = feature_mgr.create_lofted_surface()
-        # LoftedSurfaces.Add answered E_INVALIDARG to 13 argument shapes on SE 2026.
-        assert result["unsupported"] is True
-        assert "E_INVALIDARG" in result["error"]
-        assert result["num_profiles"] == 2
-        doc.Constructions.LoftedSurfaces.Add.assert_not_called()
+
+        with patch.object(feature_mgr, "_make_loft_variant_arrays") as arrays:
+            arrays.return_value = ([p1, p2], [48, 48], ["o1", "o2"])
+            result = feature_mgr.create_lofted_surface(want_end_caps=True)
+
+        assert result["status"] == "created", result
+        args = doc.Constructions.LoftedSurfaces.Add.call_args.args
+        assert args[0] == 2 and args[1] == [p1, p2] and args[3] == ["o1", "o2"]
+        assert args[2].varianttype == pythoncom.VT_ARRAY | pythoncom.VT_I4
+        assert list(args[2].value) == [48, 48]
+        assert args[4:10] == (44, 44, 44, 0.0, 44, 0.0)
+        assert args[12] is True
+        sketch_mgr.clear_accumulated_profiles.assert_called_once()
 
     def test_too_few_profiles(self, feature_mgr, managers):
         _, sketch_mgr, _, _, _, _ = managers
@@ -185,18 +196,16 @@ class TestLoftedSurface:
         assert "at least 2" in result["error"]
 
     def test_no_base_feature_is_not_a_reason_to_refuse(self, feature_mgr, managers):
-        """A construction surface needs no solid. This used to refuse with
-        "requires an existing base feature" -- a precondition Solid Edge does
-        not have, which masked the call behind it."""
-        _, sketch_mgr, _, models, _, _ = managers
+        """A construction surface needs no solid."""
+        _, sketch_mgr, doc, models, _, _ = managers
         models.Count = 0
-        p1, p2 = MagicMock(), MagicMock()
-        sketch_mgr.get_accumulated_profiles.return_value = [p1, p2]
+        sketch_mgr.get_accumulated_profiles.return_value = [MagicMock(), MagicMock()]
 
-        result = feature_mgr.create_lofted_surface()
+        with patch.object(feature_mgr, "_make_loft_variant_arrays") as arrays:
+            arrays.return_value = ([], [48, 48], [])
+            result = feature_mgr.create_lofted_surface()
 
-        assert "base feature" not in str(result.get("error", "")).lower()
-        assert result.get("unsupported") is True, result
+        assert result["status"] == "created", result
 
 
 # ============================================================================
@@ -439,18 +448,18 @@ class TestCreateRevolvedSurfaceByKeypoint:
 
 
 class TestCreateLoftedSurfaceV2:
-    """LoftedSurfaces.Add2 answered E_INVALIDARG like Add; no call is made."""
-
-    def test_refuses_with_the_evidence(self, feature_mgr, managers):
+    def test_calls_add2_with_the_same_arguments(self, feature_mgr, managers):
         _, sketch_mgr, doc, _, _, _ = managers
         sketch_mgr.get_accumulated_profiles.return_value = [MagicMock(), MagicMock()]
 
-        result = feature_mgr.create_lofted_surface_v2(want_end_caps=True)
+        with patch.object(feature_mgr, "_make_loft_variant_arrays") as arrays:
+            arrays.return_value = ([], [48, 48], [])
+            result = feature_mgr.create_lofted_surface_v2(want_end_caps=True)
 
-        assert result["unsupported"] is True
-        assert "Add2" in result["error"]
-        assert result["num_profiles"] == 2
-        doc.Constructions.LoftedSurfaces.Add2.assert_not_called()
+        assert result["status"] == "created"
+        assert result["method"] == "Add2"
+        doc.Constructions.LoftedSurfaces.Add2.assert_called_once()
+        doc.Constructions.LoftedSurfaces.Add.assert_not_called()
 
     def test_too_few_profiles(self, feature_mgr, managers):
         _, sketch_mgr, _, _, _, _ = managers
