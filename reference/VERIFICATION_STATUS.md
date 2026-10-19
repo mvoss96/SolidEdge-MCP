@@ -160,7 +160,6 @@ question on this install:
 | `wiring(type="wire")` | `Wires.Add` answers `E_FAIL` given occurrences and given a 3D sketch line drawn with `draw_3d_line` alike (Solid Edge 2026). Refuses before COM. |
 | `convert_by_file_path` | `Application.ConvertByFilePath` returns in ~1.6 s reporting nothing wrong and writes nothing, for nine output formats (stp, step, x_t, igs, jt, pdf, dxf, stl, par); `SaveCopyAs` on the opened document writes the STEP at once. Refuses and points at `export_file`. |
 | `create_assembly_swept_protrusion` | `E_INVALIDARG` with `Origins` as inner VARIANTs (the shape the part-level sweep needs) and `E_FAIL` as plain tuples or lists; the argument shape is not the cause. |
-| `create_weldment` without a template | raised a modal that hung the server; now refuses before COM. |
 
 Turned from refusals into working creators on 2026-09-17, each driven live and
 pinned: `select_set(action='all')` on a draft (`SelectSet.AddAll` is a 2D sheet call -- Siemens' only example is a draft with an active sheet -- and selects every sheet entity there; a part or assembly answers E_FAIL and is refused before the call); `add_assembly_relation(planar|axial)`, `add_assembly_constraint(mate|align|planar_align|axial_align)` (`AssemblyDocument.CreateReference(occurrence, face)` wraps a face of the occurrence's part document in the Reference that `Relations3d.AddPlanar`/`AddAxial` want -- Siemens' "Working with References" page; faces, RefPlanes and AsmRefPlanes handed over directly all answered 0x80040225. Planar constraining points are the faces' range midpoints. Two placed boxes mate, two cylinders go coaxial: Relations3d grows by one); `create_lofted_flange` (basic, advanced: `Models.AddLoftedFlange` with `Origins` = each section's first `Line2d`/`Arc2d` object, `OriginRefs` = `igStart` per section and `igNFType` last -- the community sample's shape, verified on this server's own profiles; two open lines on parallel planes give a 6-face sheet); `create_stamped(bead)` (`Beads.Add` with the cross-section a UI-made bead
@@ -203,6 +202,16 @@ interference arrays answer `E_INVALIDARG` and are omitted, so the result is
 parsed from the report file Solid Edge writes. Verified by direct COM on a
 13-occurrence assembly (German UI); the parser is unit-tested against that
 report's structure.
+
+Turned from refusals into working tools on branch `fix/unsupported-tools`
+(2026-10-19), each driven live and pinned by an integration test:
+`create_document(type='weldment')` builds a weldment assembly
+(`WeldmentAssembly = True`) with `Documents.Add("SolidEdge.AssemblyDocument",
+template)`, the template being the one
+`Application.GetDefaultTemplatePath(igWeldmentAssemblyDocument)` names (the
+legacy `SolidEdge.WeldmentDocument` ProgID wants a `.pwd` template, and
+`GetDefaultTemplatePath(igWeldmentDocument)` names only the template folder). The template must be a Windows path next to the
+ProgID: a path alone answers `CO_E_CLASSSTRING`, forward slashes `E_INVALIDARG`.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

@@ -5,7 +5,7 @@ Tests connection, document management, sketching, and assembly operations.
 Uses unittest.mock to simulate COM objects.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -554,39 +554,85 @@ class TestIsConnected:
 
 
 class TestCreateWeldment:
-    """The ProgID route raises a modal that hangs the server; it is never taken.
+    """A weldment is an assembly made from the weldment .asm template.
 
-    Documents.Add("SolidEdge.WeldmentDocument") is accepted by Solid Edge 2026,
-    which then looks for a default weldment template. On an install without the
-    weldment environment that file is absent, and the answer is a modal "Path
-    not found" that DisplayAlerts does not suppress. Verified live: the call
-    blocked until dismissed by hand, then returned 0x80030003.
+    Documents.Add needs the assembly ProgID plus the template as a Windows
+    path. The legacy "SolidEdge.WeldmentDocument" ProgID without a template
+    raises a modal that hangs the server, so it is never called that way.
     """
 
-    def test_without_a_template_it_refuses_before_any_com_call(self, doc_mgr):
+    def test_without_a_template_it_uses_the_default_one(self, doc_mgr, tmp_path):
+        dm, app = doc_mgr
+        template = tmp_path / "weldment.asm"
+        template.write_bytes(b"")
+        doc = MagicMock()
+        doc.Name = "Asm1"
+        doc.FullName = ""
+        doc.WeldmentAssembly = True
+        app.Documents.Add.return_value = doc
+
+        with patch(
+            "solidedge_mcp.backends.documents._default_weldment_template",
+            return_value=str(template),
+        ):
+            result = dm.create_weldment()
+
+        assert result["status"] == "created"
+        assert result["weldment_assembly"] is True
+        app.Documents.Add.assert_called_once_with("SolidEdge.AssemblyDocument", str(template))
+
+    def test_without_any_template_it_refuses_before_any_com_call(self, doc_mgr):
         dm, app = doc_mgr
 
-        result = dm.create_weldment()
+        with patch(
+            "solidedge_mcp.backends.documents._default_weldment_template", return_value=None
+        ):
+            result = dm.create_weldment()
 
-        assert "error" in result
         assert result["unsupported"] is True
         assert "template" in result["error"]
         app.Documents.Add.assert_not_called()
 
-    def test_with_an_existing_template_it_opens_that_file(self, doc_mgr, tmp_path):
+    def test_a_given_asm_template_goes_in_with_the_assembly_progid(self, doc_mgr, tmp_path):
         dm, app = doc_mgr
-        template = tmp_path / "weld.pwd"
+        template = tmp_path / "weld.asm"
         template.write_bytes(b"")
-        doc = MagicMock()
-        doc.Name = "Weld1.pwd"
-        doc.FullName = str(template)
-        app.Documents.Add.return_value = doc
+        app.Documents.Add.return_value = MagicMock(Name="Asm1", FullName="")
 
-        result = dm.create_weldment(template=str(template))
+        result = dm.create_weldment(template=template.as_posix())
 
         assert result["status"] == "created"
         assert result["type"] == "Weldment"
-        app.Documents.Add.assert_called_once_with(str(template))
+        app.Documents.Add.assert_called_once_with("SolidEdge.AssemblyDocument", str(template))
+
+    def test_a_given_pwd_template_goes_in_with_the_weldment_progid(self, doc_mgr, tmp_path):
+        dm, app = doc_mgr
+        template = tmp_path / "weld.pwd"
+        template.write_bytes(b"")
+        app.Documents.Add.return_value = MagicMock(Name="Weld1", FullName="")
+
+        dm.create_weldment(template=str(template))
+
+        app.Documents.Add.assert_called_once_with("SolidEdge.WeldmentDocument", str(template))
+
+    def test_the_default_template_is_asked_for_a_weldment_assembly(self, tmp_path):
+        from solidedge_mcp.backends.documents import _default_weldment_template
+
+        template = tmp_path / "w.asm"
+        template.write_bytes(b"")
+        app = MagicMock()
+        app.GetDefaultTemplatePath.return_value = str(template)
+
+        assert _default_weldment_template(app) == str(template)
+        app.GetDefaultTemplatePath.assert_called_once_with(7)  # igWeldmentAssemblyDocument
+
+    def test_a_template_folder_is_not_a_template(self, tmp_path):
+        from solidedge_mcp.backends.documents import _default_weldment_template
+
+        app = MagicMock()
+        app.GetDefaultTemplatePath.return_value = str(tmp_path)
+
+        assert _default_weldment_template(app) is None
 
     def test_a_missing_template_is_refused_not_ignored(self, doc_mgr):
         dm, app = doc_mgr

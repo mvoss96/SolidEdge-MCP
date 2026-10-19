@@ -1,13 +1,12 @@
-"""Document creators must refuse before they can hang, and must not lie.
+"""Document creators must not hang and must not lie.
 
 create_weldment without a template used to call
-Documents.Add("SolidEdge.WeldmentDocument"). Solid Edge accepts the ProgID,
-then looks for a default weldment template; on an install without the
-weldment environment that file does not exist, and the answer is a modal
-"Path not found" that DisplayAlerts does not suppress -- the one UI thread
-blocks and the server hangs until someone clicks it. Every creator also used
-to ignore a template path that was not on disk and fall through to the
-default document.
+Documents.Add("SolidEdge.WeldmentDocument"), which looks for a legacy .pwd
+template that is not installed and answers with a modal "Path not found" that
+DisplayAlerts does not suppress. It now builds a weldment assembly from the
+template Application.GetDefaultTemplatePath names for one. Every creator also used to
+ignore a template path that was not on disk and fall through to the default
+document.
 
 These run with a modal watchdog so that, if a regression ever reintroduces
 the dialog, the test fails and reports it instead of hanging the suite.
@@ -68,17 +67,21 @@ class _Watchdog:
 
 
 class TestCreateWeldment:
-    def test_without_a_template_it_refuses_at_once_with_no_dialog(self, stack):
-        with _Watchdog() as dog:
-            started = time.time()
-            result = stack.doc.create_weldment()
-            elapsed = time.time() - started
+    def test_without_a_template_it_builds_a_weldment_assembly(
+        self, stack, solid_edge, preexisting_documents
+    ):
+        from tests.integration.conftest import _scratch_document
 
-        assert "error" in result, result
-        assert result.get("unsupported") is True
-        assert elapsed < 5, f"took {elapsed:.1f}s -- was it waiting on something?"
+        with (
+            _Watchdog() as dog,
+            _scratch_document(
+                stack.doc, solid_edge, preexisting_documents, stack.doc.create_weldment, "weldment"
+            ),
+        ):
+            doc = stack.doc.get_active_document()
+            assert doc.WeldmentAssembly is True
+            assert doc.Type == 3  # igAssemblyDocument
         assert dog.titles == [], f"a dialog appeared: {dog.titles}"
-        assert stack.connection.get_application().Documents.Count == 0
 
 
 class TestAMissingTemplateIsRefused:

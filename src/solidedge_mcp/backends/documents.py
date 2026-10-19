@@ -36,24 +36,27 @@ def _missing_template(template: str) -> dict[str, Any]:
     return {"error": f"Template not found: {template}. Nothing was created."}
 
 
-#: Why create_weldment needs an explicit template on this Solid Edge.
-#: Documents.Add("SolidEdge.WeldmentDocument") is a registered ProgID, and
-#: Solid Edge 2026 accepts it -- then goes looking for its default weldment
-#: template, and on an install without the weldment environment that file
-#: does not exist. It answers with a modal "Path not found" that
-#: DisplayAlerts does not suppress, which blocks the one UI thread and hangs
-#: this server until someone dismisses it by hand; only then does the call
-#: return 0x80030003. Verified live. The server cannot know in advance whether
-#: the template is present, so the ProgID route is never taken.
+#: Solid Edge 2026 builds a weldment as an assembly from a weldment template
+#: (WeldmentAssembly = True). The legacy "SolidEdge.WeldmentDocument" ProgID
+#: looks for a .pwd template that is not installed and raises a modal "Path
+#: not found" that hangs the server, so it is never used without a template.
 _NO_WELDMENT_TEMPLATE: dict[str, Any] = {
     "error": (
-        "create_weldment needs a template path on this Solid Edge. Without one "
-        'Documents.Add("SolidEdge.WeldmentDocument") looks for a default '
-        "weldment template that is not installed, and raises a modal dialog "
-        "that hangs the server. Pass template=<path to a .pwd> that exists."
+        "No weldment template found: Application.GetDefaultTemplatePath names "
+        "no existing file for a weldment assembly. Pass "
+        "template=<path to a weldment .asm template> that exists."
     ),
     "unsupported": True,
 }
+
+
+def _default_weldment_template(app: Any) -> str | None:
+    """Return the weldment assembly template File > New uses, if it exists."""
+    try:
+        path = str(app.GetDefaultTemplatePath(DocumentTypeConstants.igWeldmentAssemblyDocument))
+    except Exception:
+        return None
+    return path if os.path.isfile(path) else None
 
 
 class DocumentManager:
@@ -484,23 +487,39 @@ class DocumentManager:
 
     @verifies_collection_growth("Documents", root="application")
     def create_weldment(self, template: str | None = None) -> dict[str, Any]:
-        """Create a new weldment document"""
+        """Create a new weldment assembly from a weldment template.
+
+        Documents.Add needs the ProgID and the template as a Windows path; a
+        path alone answers CO_E_CLASSSTRING and a path with forward slashes
+        E_INVALIDARG.
+        """
         try:
             app = self.connection.get_application()
 
             if template:
                 if not os.path.exists(template):
                     return _missing_template(template)
-                doc = app.Documents.Add(template)
             else:
-                return _NO_WELDMENT_TEMPLATE
+                template = _default_weldment_template(app)
+                if template is None:
+                    return _NO_WELDMENT_TEMPLATE
+            path = os.path.normpath(os.path.abspath(template))
+            prog_id = (
+                "SolidEdge.AssemblyDocument"
+                if path.lower().endswith(".asm")
+                else "SolidEdge.WeldmentDocument"
+            )
+            doc = app.Documents.Add(prog_id, path)
 
+            self._clear_sketch_state()
             self.active_document = doc
 
             return {
                 "status": "created",
                 "type": "Weldment",
                 "name": doc.Name,
+                "template": path,
+                "weldment_assembly": bool(com_get(doc, "WeldmentAssembly", False)),
                 "path": doc.FullName if doc.FullName else "untitled",
             }
         except Exception as e:

@@ -282,7 +282,7 @@ CASES: list[Case] = [
     Case("run_macro", {"filename": str(TMP / "nowhere.bas")}, "none", "a missing macro"),
     # documents
     Case("create_document", {"type": "part"}, "none"),
-    Case("create_document", {"type": "weldment"}, "none", "refuses without a template"),
+    Case("create_document", {"type": "weldment"}, "none", "weldment assembly, default template"),
     Case("activate_document", {"name_or_index": 0}, "part"),
     Case("close_document", {"scope": "active", "save": False}, "part"),
     Case("open_document", {"method": "foreground", "file_path": str(BOX)}, "none"),
