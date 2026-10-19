@@ -185,3 +185,68 @@ class TestMultipleBodies:
         assert [f["body_index"] for f in listed] == [0, 0, 1]
         # The second body's first feature is flat index 2 but position 1 in it.
         assert manager._get_feature_by_index(2)[0].Name == "B1"
+
+
+class TestResolveFeatureIndex:
+    def test_a_name_resolves_to_its_index(self, part):
+        manager, _doc, _real, _planes = part
+
+        assert manager.resolve_feature_index(feature_name="ExtrudedCutout_1") == (1, None)
+
+    def test_an_explicit_index_passes_through(self, part):
+        manager, _doc, _real, _planes = part
+
+        assert manager.resolve_feature_index(index=1) == (1, None)
+
+    def test_neither_name_nor_index_is_refused(self, part):
+        manager, _doc, _real, _planes = part
+
+        index, err = manager.resolve_feature_index()
+
+        assert index is None
+        assert err is not None and "feature_name" in err["error"]
+
+    def test_an_unknown_name_is_refused(self, part):
+        manager, _doc, _real, _planes = part
+
+        index, err = manager.resolve_feature_index(feature_name="Nope")
+
+        assert index is None
+        assert err is not None
+        assert err["available_features"] == ["ExtrudedProtrusion_1", "ExtrudedCutout_1"]
+
+    def test_a_reference_plane_name_is_not_a_feature(self, part):
+        manager, _doc, _real, _planes = part
+
+        index, err = manager.resolve_feature_index(feature_name="RefPlane_1")
+
+        assert index is None
+        assert err is not None
+
+    def test_a_name_and_a_different_index_are_refused(self, part):
+        manager, _doc, _real, _planes = part
+
+        index, err = manager.resolve_feature_index(index=0, feature_name="ExtrudedCutout_1")
+
+        assert index is None
+        assert err is not None
+
+    def test_an_ambiguous_name_is_refused(self):
+        from solidedge_mcp.backends.features import FeatureManager
+
+        first = MagicMock()
+        first.Features = FakeCollection([feature("Extrude")])
+        second = MagicMock()
+        second.Features = FakeCollection([feature("Extrude")])
+        doc = MagicMock()
+        doc.Models = FakeCollection([first, second])
+        doc_manager = MagicMock()
+        doc_manager.get_active_document.return_value = doc
+        manager = FeatureManager(doc_manager, MagicMock())
+
+        index, err = manager.resolve_feature_index(feature_name="Extrude")
+        assert index is None
+        assert err is not None and "ambiguous" in err["error"]
+
+        # An index that is one of the matches picks it.
+        assert manager.resolve_feature_index(index=1, feature_name="Extrude") == (1, None)

@@ -271,8 +271,8 @@ def simplify(
 
 def manage_feature(
     action: Literal["delete", "suppress", "unsuppress", "reorder", "rename", "convert"] = "delete",
-    index: int = 0,
-    target_index: int = 0,
+    index: int | None = None,
+    target_index: int | None = None,
     after: bool = True,
     new_name: str = "",
     feature_name: str = "",
@@ -280,25 +280,36 @@ def manage_feature(
 ) -> dict[str, Any]:
     """Manage entries in the feature tree (delete, suppress, reorder, rename).
 
-    index and target_index are 0-based positions in the feature tree (see
-    list_features). reorder moves 'index' to 'target_index' ('after' places it
-    behind the target). rename uses new_name. convert selects the feature by
-    feature_name and needs target_type: 'cutout' or 'protrusion'.
+    The feature is selected by feature_name or by index, a 0-based position in
+    the feature tree (see list_features); one of them is required. If both are
+    given they must name the same feature. reorder moves that feature to
+    target_index (required; 'after' places it behind the target). rename uses
+    new_name. convert selects the feature by feature_name and needs
+    target_type: 'cutout' or 'protrusion'.
     Deleting a feature is destructive and removes its geometry.
     """
+    if action == "reorder" and target_index is None:
+        return {"error": "reorder needs target_index (0-based, see list_features)."}
+    resolved = 0
+    if action in ("delete", "suppress", "unsuppress", "reorder", "rename"):
+        found, err = feature_manager.resolve_feature_index(index=index, feature_name=feature_name)
+        if err or found is None:
+            return err or {"error": "Feature could not be resolved."}
+        resolved = found
     match action:
         case "delete":
-            return feature_manager.delete_feature(index=index)
+            return feature_manager.delete_feature(index=resolved)
         case "suppress":
-            return feature_manager.feature_suppress(index=index)
+            return feature_manager.feature_suppress(index=resolved)
         case "unsuppress":
-            return feature_manager.feature_unsuppress(index=index)
+            return feature_manager.feature_unsuppress(index=resolved)
         case "reorder":
+            assert target_index is not None
             return feature_manager.feature_reorder(
-                index=index, target_index=target_index, after=after
+                index=resolved, target_index=target_index, after=after
             )
         case "rename":
-            return feature_manager.feature_rename(index=index, new_name=new_name)
+            return feature_manager.feature_rename(index=resolved, new_name=new_name)
         case "convert":
             return feature_manager.convert_feature_type(
                 feature_name=feature_name, target_type=target_type

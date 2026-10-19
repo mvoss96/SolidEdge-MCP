@@ -1331,14 +1331,55 @@ class TestManageFeature:
         ],
     )
     def test_dispatch(self, mock_mgr, disc, method):
+        mock_mgr.resolve_feature_index.return_value = (2, None)
         getattr(mock_mgr, method).return_value = {"status": "ok"}
-        result = manage_feature(action=disc)
+        result = manage_feature(action=disc, feature_name="F", target_index=0)
         getattr(mock_mgr, method).assert_called_once()
         assert result == {"status": "ok"}
 
     def test_unknown(self, mock_mgr):
         result = manage_feature(action="bogus")
         assert "error" in result
+
+    @pytest.mark.parametrize(
+        "disc, method",
+        [
+            ("delete", "delete_feature"),
+            ("suppress", "feature_suppress"),
+            ("unsuppress", "feature_unsuppress"),
+            ("rename", "feature_rename"),
+        ],
+    )
+    def test_the_resolved_index_reaches_the_backend(self, mock_mgr, disc, method):
+        mock_mgr.resolve_feature_index.return_value = (2, None)
+
+        manage_feature(action=disc, feature_name="ExtrudedCutout_3")
+
+        mock_mgr.resolve_feature_index.assert_called_once_with(
+            index=None, feature_name="ExtrudedCutout_3"
+        )
+        assert getattr(mock_mgr, method).call_args.kwargs["index"] == 2
+
+    def test_a_resolution_error_stops_the_call(self, mock_mgr):
+        mock_mgr.resolve_feature_index.return_value = (None, {"error": "No feature given."})
+
+        result = manage_feature(action="delete")
+
+        assert result == {"error": "No feature given."}
+        mock_mgr.delete_feature.assert_not_called()
+
+    def test_reorder_needs_a_target_index(self, mock_mgr):
+        result = manage_feature(action="reorder", index=1)
+
+        assert "error" in result
+        mock_mgr.feature_reorder.assert_not_called()
+
+    def test_reorder_passes_both_indices(self, mock_mgr):
+        mock_mgr.resolve_feature_index.return_value = (1, None)
+
+        manage_feature(action="reorder", index=1, target_index=0, after=False)
+
+        mock_mgr.feature_reorder.assert_called_once_with(index=1, target_index=0, after=False)
 
 
 # === sheet_metal_misc ===

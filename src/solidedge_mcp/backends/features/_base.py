@@ -676,6 +676,53 @@ class FeatureManagerBase:
         model = doc.Models.Item(entry["body_index"] + 1)
         return model.Features.Item(entry["position_in_body"]), None
 
+    def resolve_feature_index(
+        self, index: int | None = None, feature_name: str = ""
+    ) -> tuple[int | None, dict[str, Any] | None]:
+        """Resolve a feature name or an explicit index to the 0-based feature index.
+
+        A call with neither is refused instead of falling back to index 0, so a
+        destructive action never lands on the first feature by default.
+        """
+        if not feature_name:
+            if index is None:
+                return None, {
+                    "error": (
+                        "No feature given. Pass feature_name or a 0-based index "
+                        "(read them with list_features)."
+                    ),
+                }
+            return index, None
+
+        try:
+            entries = self._enumerate_features(self.doc_manager.get_active_document())
+        except Exception as e:
+            return None, error_result(e)
+
+        matches = [int(e["index"]) for e in entries if e.get("name") == feature_name]
+        if not matches:
+            return None, {
+                "error": f"Feature '{feature_name}' not found.",
+                "available_features": [e.get("name") for e in entries],
+            }
+        if index is not None:
+            if index in matches:
+                return index, None
+            return None, {
+                "error": (
+                    f"feature_name '{feature_name}' is at index {matches}, but index "
+                    f"{index} was also given. Pass one of them."
+                ),
+            }
+        if len(matches) > 1:
+            return None, {
+                "error": (
+                    f"Feature name '{feature_name}' is ambiguous: it matches indices "
+                    f"{matches}. Pass index as well to pick one."
+                ),
+            }
+        return matches[0], None
+
     def delete_feature(self, index: int) -> dict[str, Any]:
         """Delete a feature by 0-based index."""
         try:
