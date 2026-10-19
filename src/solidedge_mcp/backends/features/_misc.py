@@ -1012,7 +1012,9 @@ class MiscFeaturesMixin:
         Args:
             feature_name: Name of the feature to pattern
             count: Number of instances, the original included
-            angle: Angle the instances are spread over, in degrees
+            angle: Angle the instances are spread over, in degrees; 360 spaces
+                them evenly round the circle, less places the first and the
+                last instance at both ends of the arc
             plane_index: 1-based reference plane the axis is normal to
             axis_x, axis_y, axis_z: A point on the axis, in meters
 
@@ -1047,17 +1049,24 @@ class MiscFeaturesMixin:
             # which marshals the plain lists as SAFEARRAY(VT_DISPATCH) and
             # SAFEARRAY(VT_R8). AxisPoint must be a 3D point; [x, y] answers
             # E_INVALIDARG. CurveDirection 0 is what the verified call passed.
+            # With ArcPattern False Solid Edge ignores AngleSpacing and spreads
+            # the instances over the full circle. With ArcPattern True,
+            # AngleSpacing is the step between neighbouring instances, so a
+            # partial arc of `angle` with `count` instances (both ends
+            # included) needs a step of angle / (count - 1).
+            full_circle = angle >= 360.0 - 1e-9
+            spacing = 2 * math.pi if full_circle else math.radians(angle) / (count - 1)
             patterns = win32.gencache.EnsureDispatch(model.Patterns)
             pattern = patterns.AddByCircularEx(
                 1,
                 [target_feature],
                 ref_plane,
                 count,
-                math.radians(angle),
+                spacing,
                 [axis_x, axis_y, axis_z],
                 PatternOffsetTypeConstants.sePatternFitOffset,
                 0,
-                False,
+                not full_circle,
                 PatternTypeConstants.seSmartPattern,
             )
 

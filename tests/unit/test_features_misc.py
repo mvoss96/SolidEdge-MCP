@@ -1474,14 +1474,25 @@ class TestCreatePatternCircularEx:
             0,
         )
 
-    def test_angle_is_converted_to_radians(self, feature_mgr, managers):
+    def test_partial_arc_passes_the_step_between_instances(self, feature_mgr, managers):
         _, _, doc, _, model, _ = managers
         _setup_feature_lookup(doc, "Spoke")
 
         feature_mgr.create_pattern_circular_ex("Spoke", 4, angle=90.0)
 
         args = model.Patterns.AddByCircularEx.call_args.args
-        assert args[4] == pytest.approx(math.pi / 2)
+        assert args[4] == pytest.approx(math.pi / 2 / 3)
+        assert args[8] is True
+
+    def test_full_circle_passes_two_pi_without_arc(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        _setup_feature_lookup(doc, "Spoke")
+
+        feature_mgr.create_pattern_circular_ex("Spoke", 4, angle=360.0)
+
+        args = model.Patterns.AddByCircularEx.call_args.args
+        assert args[4] == pytest.approx(2 * math.pi)
+        assert args[8] is False
 
     def test_axis_point_is_three_dimensional(self, feature_mgr, managers):
         _, _, doc, _, model, _ = managers
