@@ -1093,21 +1093,22 @@ class SheetMetalMixin:
             Dict with status and thread info
         """
         # Threads.Add(HoleData, 1, [cylinder], [end face]) answers E_INVALIDARG
-        # on Solid Edge 2026 for an extruded boss and for a cut hole alike, with
-        # every HoleData this server can build: igTappedHole bare, with
-        # ThreadMinorDiameter and ThreadDepth, igRegularThread with
-        # ThreadExternalDiameter; a ThreadDescription ("M8") is refused by
-        # HoleDataCollection.Add itself. A thread that comes with its hole
-        # (create_hole(method='threaded')) is the route that works.
+        # on Solid Edge 2026 in ordered and synchronous parts alike: for a boss
+        # and a hole, with every HoleData tried, with the end as a face or an
+        # edge, the arrays as VT_ARRAY of VT_DISPATCH/VT_UNKNOWN/VT_VARIANT (also
+        # by reference) through raw Invoke, and AddEx the same. In
+        # Training/Pin1.par the HoleData of the UI-made Thread_1 is refused for
+        # every cylinder/face pair of that part, so the HoleData is not the cause.
         return {
             "error": (
                 "Threads.Add will not thread an existing cylindrical face on Solid "
                 "Edge 2026: E_INVALIDARG for a boss and a hole with every HoleData "
-                "tried, including one filled in through Standard/Size/"
-                "ThreadDataByDescription with a depth, and every end-face choice. The "
+                "tried, including the HoleData of a thread made in the UI, and every "
+                "end face or edge. The "
                 "Solid Edge developer community reports the same for a decade "
-                "(community.sw.siemens.com, 'Parameters for Threads.Add Method'): a "
-                "thread has to come with its hole. Use create_hole(method='threaded')."
+                "(community.sw.siemens.com, 'Parameters for Threads.Add Method'). "
+                "This server has no thread route: add the thread with the Thread "
+                "command in the Solid Edge UI."
             ),
             "unsupported": True,
             "face_index": face_index,

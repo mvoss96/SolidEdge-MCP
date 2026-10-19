@@ -725,7 +725,8 @@ class TestCreateThreadRefuses:
         _, _, doc, _, model, _ = managers
         result = feature_mgr.create_thread(0, thread_diameter=0.006, thread_depth=0.01)
         assert result["unsupported"] is True
-        assert "create_hole(method='threaded')" in result["error"]
+        assert "Solid Edge UI" in result["error"]
+        assert "create_hole(method='threaded')" not in result["error"]
         assert result["thread_diameter"] == 0.006
         model.Threads.Add.assert_not_called()
         doc.HoleDataCollection.Add.assert_not_called()
