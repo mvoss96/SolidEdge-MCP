@@ -9,6 +9,7 @@ Uses unittest.mock to simulate COM objects.
 """
 
 import math
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -414,25 +415,168 @@ class TestGetSubOccurrences:
 # ============================================================================
 
 
-class TestCheckInterference:
-    def test_reports_unsupported_without_calling_com(self, asm_mgr):
-        """CheckInterference cannot be driven from pywin32.
+_GERMAN_REPORT = """Auszugsname: C:/Temp/report.txt
+Auszugszeit 19.10.2026 15:38:54
+Auszugsoptionen:
+    Teilnamen
+    Kollisionsvolumen
 
-        Status is an [out] enum pointer and NumInterferences an
-        [out, optional] variant, with six more optionals behind them. Every
-        argument shape tried against Solid Edge 2026 failed: supplying buffers
-        gave a buffer-parse error, omitting them DISP_E_TYPEMISMATCH.
-        """
+Auswahlsatz 1:
+    rahmen.par:1
+    sattel.par:1
+    laufrad.par:2
+
+Kollisionen:
+    1 von 2
+    rahmen.par:1
+    sattel.par:1
+    Kollisionsvolumen 1.197 mm^3
+    Kollisionsvolumen 0.000 mm^3
+
+    2 von 2
+    rahmen.par:1
+    laufrad.par:2
+    Kollisionsvolumen 504.231 mm^3
+    (Wahrscheinliche Kollision)
+
+    2 Kollisionen festgestellt
+"""
+
+
+class TestParseInterferenceReport:
+    def test_reads_blocks_by_structure_not_by_label(self):
+        from solidedge_mcp.backends.assembly._query import parse_interference_report
+
+        blocks = parse_interference_report(
+            _GERMAN_REPORT, ["rahmen.par:1", "sattel.par:1", "laufrad.par:2"]
+        )
+
+        assert [b["parts"] for b in blocks] == [
+            ["rahmen.par:1", "sattel.par:1"],
+            ["rahmen.par:1", "laufrad.par:2"],
+        ]
+        assert blocks[0]["volumes"] == [1.197, 0.0]
+        assert blocks[0]["total_volume"] == pytest.approx(1.197)
+        assert blocks[1]["volume_unit"] == "mm^3"
+        assert blocks[1]["notes"] == ["(Wahrscheinliche Kollision)"]
+
+    def test_an_english_report_parses_the_same_way(self):
+        from solidedge_mcp.backends.assembly._query import parse_interference_report
+
+        text = "Interferences:\n    1 of 1\n    a.par:1\n    b.par:1\n    Volume 2,5 mm^3\n"
+
+        (block,) = parse_interference_report(text, ["a.par:1", "b.par:1"])
+
+        assert block["parts"] == ["a.par:1", "b.par:1"]
+        assert block["volumes"] == [2.5]
+
+    def test_a_nested_occurrence_name_counts_as_a_part(self):
+        from solidedge_mcp.backends.assembly._query import parse_interference_report
+
+        text = "    1 of 1\n    sub.asm:1/a.par:1\n    b.par:1\n"
+
+        (block,) = parse_interference_report(text, ["b.par:1"])
+
+        assert block["parts"] == ["sub.asm:1/a.par:1", "b.par:1"]
+
+    def test_a_report_without_blocks_has_no_interferences(self):
+        from solidedge_mcp.backends.assembly._query import parse_interference_report
+
+        assert parse_interference_report("Kollisionen:\n    Keine\n", ["a.par:1"]) == []
+
+
+class TestCheckInterference:
+    @pytest.fixture
+    def assembly(self, asm_mgr, tmp_path, monkeypatch):
+        """Three occurrences; Invoke writes the German report and sets Status."""
+        import pythoncom
+
+        from solidedge_mcp.backends.assembly import _query
+
+        monkeypatch.setattr(_query.tempfile, "mkdtemp", lambda prefix="": str(tmp_path))
         am, doc = asm_mgr
+        occs = []
+        for name in ("rahmen.par:1", "sattel.par:1", "laufrad.par:2"):
+            occ = MagicMock()
+            occ.Name = name
+            occs.append(occ)
         occurrences = MagicMock()
-        occurrences.Count = 2
-        occurrences.Item.side_effect = lambda i: MagicMock()
+        occurrences.Count = 3
+        occurrences.Item.side_effect = lambda i: occs[i - 1]
         doc.Occurrences = occurrences
 
+        seen = {}
+
+        def invoke(*args):
+            report_path = args[11]
+            seen["existed"] = os.path.exists(report_path)
+            with open(report_path, "w", encoding="utf-8-sig") as f:
+                f.write(_GERMAN_REPORT)
+            args[6].value = 5
+            seen["args"] = args
+
+        doc._oleobj_.GetIDsOfNames.return_value = 24579
+        doc._oleobj_.Invoke.side_effect = invoke
+        return am, doc, occs, seen, pythoncom
+
+    def test_all_components_are_checked_against_each_other(self, assembly):
+        am, doc, occs, seen, pythoncom = assembly
+
         result = am.check_interference()
-        assert result["unsupported"] is True
-        assert "bounding_box" in result["error"]
-        doc.CheckInterference.assert_not_called()
+
+        doc._oleobj_.GetIDsOfNames.assert_called_once_with(0, "CheckInterference")
+        args = seen["args"]
+        assert args[:5] == (24579, 0, pythoncom.DISPATCH_METHOD, True, 3)
+        assert args[5].varianttype == pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH
+        assert list(args[5].value) == occs
+        assert args[6].varianttype == pythoncom.VT_BYREF | pythoncom.VT_I4
+        assert args[7] == 4  # seInterferenceComparisonSet1vsItself
+        assert args[8] is pythoncom.ArgNotFound
+        assert args[9] is pythoncom.ArgNotFound
+        assert args[10] is False
+        assert args[12] == 1 | 8  # part names + interference volume
+        assert len(args) == 13  # the [out] arrays are omitted
+        assert seen["existed"] is False
+
+        assert result["status"] == "interference"
+        assert result["interference_count"] == 2
+        assert result["check_status"] == "incomplete"
+        assert result["check_status_code"] == 5
+        assert result["interferences"][1]["parts"] == ["rahmen.par:1", "laufrad.par:2"]
+        assert "Kollisionen:" in result["report"]
+        assert result["report_path"] == args[11]
+
+    def test_one_component_is_checked_against_all_others(self, assembly):
+        am, doc, occs, seen, pythoncom = assembly
+
+        am.check_interference(component_index=1)
+
+        args = seen["args"]
+        assert args[4] == 1
+        assert list(args[5].value) == [occs[1]]
+        assert args[7] == 2  # seInterferenceComparisonSet1vsAllOther
+
+    def test_no_report_means_no_interferences(self, assembly):
+        am, doc, _occs, _seen, _pythoncom = assembly
+
+        def invoke(*args):
+            args[6].value = 1
+
+        doc._oleobj_.Invoke.side_effect = invoke
+
+        result = am.check_interference()
+
+        assert result["status"] == "no_interference"
+        assert result["check_status"] == "none"
+        assert result["report"] is None
+
+    def test_a_com_error_is_reported(self, assembly):
+        am, doc, _occs, _seen, _pythoncom = assembly
+        doc._oleobj_.Invoke.side_effect = Exception("E_INVALIDARG")
+
+        result = am.check_interference()
+
+        assert "error" in result
 
     def test_invalid_index_still_validated(self, asm_mgr):
         am, doc = asm_mgr

@@ -207,6 +207,34 @@ class AssemblyRelationConstants:
     igRelation3dOrientationNotspecified = 0
 
 
+class InterferenceComparisonConstants:
+    """constant.tlb > InterferenceComparisonConstants."""
+
+    seInterferenceComparisonSet1vsSet2 = 1
+    seInterferenceComparisonSet1vsAllOther = 2
+    seInterferenceComparisonSet1vsVisible = 3
+    seInterferenceComparisonSet1vsItself = 4
+
+
+class InterferenceReportConstants:
+    """constant.tlb > InterferenceReportConstants (bit flags)."""
+
+    seInterferenceReportPartNames = 1
+    seInterferenceReportPartCentersOfGravity = 2
+    seInterferenceReportInterferenceCenterOfGravity = 4
+    seInterferenceReportInterferenceVolume = 8
+
+
+class InterferenceStatusConstants:
+    """assembly.tlb > InterferenceStatusConstants."""
+
+    seInterferenceStatusNoInterference = 1
+    seInterferenceStatusConfirmedInterference = 2
+    seInterferenceStatusProbableInterference = 3
+    seInterferenceStatusConfirmedAndProbableInterference = 4
+    seInterferenceStatusIncompleteAnalysis = 5
+
+
 class ModelingModeConstants:
     """Modeling mode constants (from type library)"""
 

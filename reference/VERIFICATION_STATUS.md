@@ -195,6 +195,14 @@ holes, all over 360 degrees); the tool path itself has unit tests only so far.
 recorded an empty `MirrorCopy` for ordered features. An ordered part now goes
 through `MirrorCopies.Add(RefPlane, n, [features])`, verified by direct COM to
 add exactly the mirrored volume; a synchronous part keeps `AddSync`.
+`query_component(property='interference')` was refused as unreachable. It
+calls `AssemblyDocument.CheckInterference` through `IDispatch.Invoke`: the
+type-library wrapper marshals Set1 as a VARIANT array (`DISP_E_TYPEMISMATCH`),
+`VARIANT(VT_ARRAY | VT_DISPATCH, occurrences)` is accepted; the `[out]`
+interference arrays answer `E_INVALIDARG` and are omitted, so the result is
+parsed from the report file Solid Edge writes. Verified by direct COM on a
+13-occurrence assembly (German UI); the parser is unit-tested against that
+report's structure.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

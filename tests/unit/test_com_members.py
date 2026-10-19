@@ -54,6 +54,8 @@ UNVERIFIED: frozenset[str] = frozenset(
         "WINFUNCTYPE",
         "GetIDsOfNames",  # IDispatch itself, via doc._oleobj_ (export/_draft.py)
         "InvokeTypes",  # same: declared-type invoke for [in, out] parameters
+        "Invoke",  # same: raw invoke for CheckInterference (assembly/_query.py)
+        "ArgNotFound",  # pythoncom marker for an omitted optional argument
         "Formatter",
         "GetActiveObject",
         "Logger",

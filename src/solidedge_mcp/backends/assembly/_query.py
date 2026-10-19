@@ -3,15 +3,78 @@
 import contextlib
 import math
 import os
+import re
+import tempfile
 from typing import Any
+
+import pythoncom
+from win32com.client import VARIANT
 
 from solidedge_mcp.backends.errors import error_result
 
 from ..comutil import describe_document_type
+from ..constants import (
+    InterferenceComparisonConstants,
+    InterferenceReportConstants,
+    InterferenceStatusConstants,
+)
 from ..logging import get_logger
 from ._base import com_get
 
 _logger = get_logger(__name__)
+
+_INTERFERENCE_STATUS = {
+    InterferenceStatusConstants.seInterferenceStatusNoInterference: "none",
+    InterferenceStatusConstants.seInterferenceStatusConfirmedInterference: "confirmed",
+    InterferenceStatusConstants.seInterferenceStatusProbableInterference: "probable",
+    InterferenceStatusConstants.seInterferenceStatusConfirmedAndProbableInterference: (
+        "confirmed_and_probable"
+    ),
+    InterferenceStatusConstants.seInterferenceStatusIncompleteAnalysis: "incomplete",
+}
+
+# "1 of 3" / "1 von 3": the first line of one interference block.
+_BLOCK_HEADER = re.compile(r"^\s*(\d+)\s+\S+\s+(\d+)\s*$")
+# "rahmen.par:1": an occurrence name not among the top-level ones (nested).
+_OCCURRENCE_NAME = re.compile(r"^\S.*:\d+$")
+# "Interference volume 1.808 mm^3": a number followed by a cubed unit.
+_VOLUME = re.compile(r"([-+]?\d+(?:[.,]\d+)?)\s*([^\s\d]*\^3)")
+
+
+def parse_interference_report(text: str, occurrence_names: list[str]) -> list[dict[str, Any]]:
+    """Read the interference blocks of a CheckInterference report.
+
+    The labels are in the UI language, so the parse relies on structure: a
+    block starts with a line of two numbers around one word ("1 of 3"), lines
+    equal to an occurrence name (or shaped like one, "name.par:1") are the
+    parts, and lines with a cubed unit are volumes. Any other line in the
+    block is kept in "notes".
+    """
+    known = {name for name in occurrence_names if name}
+    blocks: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            current = None
+            continue
+        if _BLOCK_HEADER.match(line):
+            current = {"parts": [], "volumes": [], "volume_unit": None, "notes": []}
+            blocks.append(current)
+            continue
+        if current is None:
+            continue
+        volume = _VOLUME.search(line)
+        if line in known or (not volume and _OCCURRENCE_NAME.match(line)):
+            current["parts"].append(line)
+        elif volume:
+            current["volumes"].append(float(volume.group(1).replace(",", ".")))
+            current["volume_unit"] = volume.group(2)
+        else:
+            current["notes"].append(line)
+    for block in blocks:
+        block["total_volume"] = sum(block["volumes"])
+    return blocks
 
 
 class QueryMixin:
@@ -730,36 +793,74 @@ class QueryMixin:
                 return err
 
             occurrences = doc.Occurrences
+            count = occurrences.Count
 
-            if occurrences.Count < 2:
+            if count < 2:
                 return {
                     "status": "no_interference",
                     "message": "Need at least 2 components for interference check",
                 }
 
-            if component_index is not None and (
-                component_index < 0 or component_index >= occurrences.Count
-            ):
+            if component_index is not None and (component_index < 0 or component_index >= count):
                 return {"error": f"Invalid component index: {component_index}"}
 
-            # AssemblyDocument.CheckInterference declares Status as an [out]
-            # InterferenceStatusConstants* and NumInterferences as an
-            # [out, optional] VT_VARIANT*, with six more [in,out] optionals
-            # after them. pywin32 gives every parameter a positional slot and
-            # cannot synthesise the enum out-pointer, so every argument shape
-            # tried against Solid Edge 2026 fails: passing the buffers gives a
-            # buffer-parse error, omitting them gives DISP_E_TYPEMISMATCH.
+            names = [str(com_get(occurrences.Item(i), "Name", "")) for i in range(1, count + 1)]
+            if component_index is None:
+                set1 = [occurrences.Item(i) for i in range(1, count + 1)]
+                comparison = InterferenceComparisonConstants.seInterferenceComparisonSet1vsItself
+            else:
+                set1 = [occurrences.Item(component_index + 1)]
+                comparison = InterferenceComparisonConstants.seInterferenceComparisonSet1vsAllOther
+
+            # Solid Edge must not be handed a path that exists (it prompts),
+            # so the report goes to a fresh name in a new temp directory.
+            report_path = os.path.join(tempfile.mkdtemp(prefix="se_interference_"), "report.txt")
+            report_type = (
+                InterferenceReportConstants.seInterferenceReportPartNames
+                | InterferenceReportConstants.seInterferenceReportInterferenceVolume
+            )
+
+            # Called through IDispatch.Invoke, verified on Solid Edge 2026. The
+            # type-library wrapper marshals Set1 as a VARIANT array, which
+            # answers DISP_E_TYPEMISMATCH; it has to be VT_ARRAY | VT_DISPATCH.
+            # Passing the [out] NumInterferences/InterferingParts* parameters
+            # answers E_INVALIDARG, so they are omitted and the report is read
+            # instead. An empty ReportFilename or ReportType 0 is E_INVALIDARG.
+            ole = doc._oleobj_
+            dispid = ole.GetIDsOfNames(0, "CheckInterference")
+            status = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+            ole.Invoke(
+                dispid,
+                0,
+                pythoncom.DISPATCH_METHOD,
+                True,
+                len(set1),
+                VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, set1),
+                status,
+                comparison,
+                pythoncom.ArgNotFound,  # NumElementsSet2
+                pythoncom.ArgNotFound,  # Set2
+                False,  # AddInterferenceAsOccurrence
+                report_path,
+                report_type,
+            )
+
+            report_text = None
+            if os.path.exists(report_path):
+                with open(report_path, encoding="utf-8-sig", errors="replace") as f:
+                    report_text = f.read()
+            interferences = parse_interference_report(report_text or "", names)
+
+            status_code = status.value
             return {
-                "error": (
-                    "Interference checking is not reachable through COM automation. "
-                    "AssemblyDocument.CheckInterference returns its result through an "
-                    "out-parameter that pywin32 cannot supply, and every argument form "
-                    "fails with a type mismatch. Use Inspect > Check Interference in "
-                    "Solid Edge, or compare component bounding boxes with "
-                    "query_component(property='bounding_box') for a rough overlap test."
-                ),
-                "unsupported": True,
+                "status": "interference" if interferences else "no_interference",
+                "interference_count": len(interferences),
+                "interferences": interferences,
+                "check_status": _INTERFERENCE_STATUS.get(status_code, "unknown"),
+                "check_status_code": status_code,
                 "component_checked": component_index,
+                "report_path": report_path if report_text is not None else None,
+                "report": report_text,
             }
 
         except Exception as e:

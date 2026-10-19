@@ -231,7 +231,9 @@ def query_component(
     Per-component properties use 0-based component_index (default 0).
     'occurrence' looks up by internal_id instead.
     'interference' checks component_index against all others, or every
-    pair when component_index is omitted.
+    pair when component_index is omitted. It returns the parsed interference
+    blocks (parts, volumes in the report's unit) and the raw Solid Edge
+    report text and path.
     """
     idx = component_index if component_index is not None else 0
     match property:
