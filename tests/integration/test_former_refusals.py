@@ -283,3 +283,18 @@ class TestVariableRoundAndLip:
         assert r.get("status") == "created", r
         added = _volume(stack) - before
         assert added in (pytest.approx(0.08 * 6e-6), pytest.approx(0.048 * 6e-6))
+
+
+class TestSlotsAgainstThePlaneNormal:
+    @pytest.mark.parametrize("method", ["create_slot", "create_slot_ex"])
+    def test_reverse_cuts_down_from_a_plane_at_the_top_face(self, stack, new_part, method):
+        _box(stack)
+        before = _volume(stack)
+        _sketch_on_top(stack)
+        stack.sketch.draw_line(0.02, 0.02, 0.04, 0.02)
+        stack.sketch.close_sketch(closed=False)
+
+        r = getattr(stack.feature, method)(0.004, 0.005, direction="Reverse")
+
+        assert r.get("status") == "created", r
+        assert before - _volume(stack) == pytest.approx(0.004 * 0.02 * 0.005, rel=1e-3)

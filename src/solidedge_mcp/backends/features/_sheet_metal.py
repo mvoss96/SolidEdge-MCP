@@ -80,6 +80,11 @@ def _lines_form_a_loop(profile: Any) -> bool:
     return all(shared == 2 for shared in tally.values())
 
 
+def _slot_side(direction: str) -> int:
+    """Slot extent side: 'Normal' along the sketch plane normal (igRight), else igLeft."""
+    return DirectionConstants.igRight if direction == "Normal" else DirectionConstants.igLeft
+
+
 class SheetMetalMixin:
     """Mixin providing sheet metal and miscellaneous part feature methods."""
 
@@ -1252,37 +1257,24 @@ class SheetMetalMixin:
         }
 
     @verifies_geometry
-    @verifies_geometry
     def create_slot(self, width: float, depth: float, direction: str = "Normal") -> dict[str, Any]:
         """
-        Create a slot feature from the active sketch profile.
+        Cut a slot along an open line in the active sketch with Slots.Add.
 
-        NOT AVAILABLE via COM automation. Slots.Add takes 22 arguments, two of
-        which are KeyPointOrTangentFace objects and two more of which are the
-        From/To faces or planes of the extent. Those are user selections this
-        server cannot make, so the call is never made.
+        The side follows the sketch plane's normal: 'Normal' (igRight) cuts
+        along it, 'Reverse' (igLeft) against it. On a plane at the top face of a
+        box, whose normal points out, only igLeft cuts (Solid Edge 2026); a
+        slot on the side without material removes nothing, and the geometry
+        check reports that.
 
         Args:
-            depth: Slot depth in meters
+            width: Slot width in meters
+            depth: Slot depth in meters (<= 0 cuts through all)
             direction: 'Normal' or 'Reverse'
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and slot info
         """
-        if direction != "Normal":
-            # Verified on Solid Edge 2026: with igLeft the slot is recorded and
-            # cuts nothing (faces 6 -> 6), with igRight it cuts (6 -> 10).
-            return {
-                "error": (
-                    "A slot cuts only with direction='Normal' on Solid Edge 2026; "
-                    "'Reverse' records a slot that removes nothing. Draw the path on "
-                    "the other face instead."
-                ),
-                "unsupported": True,
-                "width": width,
-                "depth": depth,
-                "direction": direction,
-            }
         try:
             doc = self.doc_manager.get_active_document()
             profile = self.sketch_manager.get_active_sketch()
@@ -1313,7 +1305,7 @@ class SheetMetalMixin:
                 0.0,
                 0.0,
                 extent,
-                DirectionConstants.igRight,
+                _slot_side(direction),
                 depth,
                 0,
                 None,
@@ -2319,35 +2311,69 @@ class SheetMetalMixin:
         self, width: float, depth: float, direction: str = "Normal"
     ) -> dict[str, Any]:
         """
-        Create an extended slot feature with width and depth control.
+        Cut a slot along an open line with Slots.AddEx.
 
-        NOT AVAILABLE via COM automation. Slots.AddEx takes 18 arguments,
-        including a KeyPointOrTangentFace object and the From/To faces or planes
-        of the extent, which are user selections this server cannot make. The
-        call is never made.
+        Slots.AddEx(NumberOfProfiles, ProfileArray, SlotType, SlotEndCondition,
+        SlotWidth, SlotOffsetWidth, SlotOffsetDepth, ExtentType, ExtentSide,
+        FiniteDistance, KeyPointFlags, KeyPointOrTangentFace, FromFaceOrPlane,
+        FromOffsetSide, FromOffsetDistance, ToFaceOrPlane, ToOffsetSide,
+        ToOffsetDistance); the keypoint and face slots take None for a finite or
+        through-all extent (Solid Edge 2026). The side follows the sketch
+        plane's normal like Slots.Add.
 
         Args:
             width: Slot width in meters
-            depth: Slot depth in meters
-            direction: 'Normal' or 'Reverse'
+            depth: Slot depth in meters (<= 0 cuts through all)
+            direction: 'Normal' (igRight) or 'Reverse' (igLeft)
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and slot info
         """
-        return {
-            "error": (
-                "Slot features are not available through this server: "
-                "Slots.AddEx requires 18 arguments including a "
-                "KeyPointOrTangentFace object and From/To extent faces that "
-                "cannot be selected here. Use an extruded cutout, or create the "
-                "slot in the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "slot_ex",
-            "width": width,
-            "depth": depth,
-            "direction": direction,
-        }
+        try:
+            doc = self.doc_manager.get_active_document()
+            profile = self.sketch_manager.get_active_sketch()
+            if not profile:
+                return {"error": "No active sketch profile. Create and close a sketch first."}
+            err = self._require_open_profile(profile, "slot")
+            if err:
+                return err
+            models = doc.Models
+            if models.Count == 0:
+                return {"error": "No base feature exists. Create a base feature first."}
+            extent = (
+                ExtentTypeConstants.igThroughAll if depth <= 0 else ExtentTypeConstants.igFinite
+            )
+            models.Item(1).Slots.AddEx(
+                1,
+                [profile],
+                FeaturePropertyConstants.igRegularSlot,
+                FeaturePropertyConstants.igNullConstant,
+                width,
+                0.0,
+                0.0,
+                extent,
+                _slot_side(direction),
+                depth,
+                0,
+                None,
+                None,
+                OffsetSideConstants.seOffsetNone,
+                0.0,
+                None,
+                OffsetSideConstants.seOffsetNone,
+                0.0,
+            )
+            self.sketch_manager.clear_accumulated_profiles()
+            return {
+                "status": "created",
+                "type": "slot_ex",
+                "width": width,
+                "depth": depth,
+                "direction": direction,
+                "extent": "through_all" if depth <= 0 else "finite",
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_slot_sync(self, width: float, depth: float) -> dict[str, Any]:

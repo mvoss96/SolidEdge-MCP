@@ -570,11 +570,12 @@ class TestCreateSlot:
         assert result["extent"] == "through_all"
         assert model.Slots.Add.call_args.args[6] == 16
 
-    def test_reverse_is_refused_as_a_verified_no_op(self, feature_mgr, managers):
-        _, _, _, _, model, _ = managers
+    def test_reverse_cuts_against_the_plane_normal(self, feature_mgr, managers):
+        _, _, _, _, model, profile = managers
+        self._open_profile(profile)
         result = feature_mgr.create_slot(0.004, 0.01, direction="Reverse")
-        assert result["unsupported"] is True
-        model.Slots.Add.assert_not_called()
+        assert result["status"] == "created"
+        assert model.Slots.Add.call_args.args[7] == 1  # igLeft
 
     def test_a_closed_profile_is_refused(self, feature_mgr, managers):
         _, _, _, _, model, profile = managers
@@ -1194,15 +1195,42 @@ class TestCreateDimpleEx:
 
 
 class TestCreateSlotEx:
-    """Slots.AddEx needs 18 arguments including a KeyPointOrTangentFace."""
+    """Slots.AddEx cuts along a line with None in the keypoint and face slots."""
 
-    def test_unsupported(self, feature_mgr, managers):
-        _, _, _, _, model, _ = managers
-        result = feature_mgr.create_slot_ex(0.005, 0.01)
-        assert result["unsupported"] is True
-        assert result["width"] == 0.005
-        assert result["depth"] == 0.01
-        assert "KeyPointOrTangentFace" in result["error"]
+    def test_cuts_against_the_normal_with_reverse(self, feature_mgr, managers):
+        _, sketch_mgr, _, _, model, profile = managers
+        for name in ("Circles2d", "Ellipses2d", "Boundaries2d"):
+            getattr(profile, name).Count = 0
+
+        result = feature_mgr.create_slot_ex(0.005, 0.01, direction="Reverse")
+
+        assert result["status"] == "created", result
+        model.Slots.AddEx.assert_called_once_with(
+            1,
+            [profile],
+            235,
+            0,
+            0.005,
+            0.0,
+            0.0,
+            13,
+            1,
+            0.01,
+            0,
+            None,
+            None,
+            44,
+            0.0,
+            None,
+            44,
+            0.0,
+        )
+        sketch_mgr.clear_accumulated_profiles.assert_called_once()
+
+    def test_a_closed_profile_is_refused(self, feature_mgr, managers):
+        _, _, _, _, model, profile = managers
+        profile.Circles2d.Count = 1
+        assert "error" in feature_mgr.create_slot_ex(0.005, 0.01)
         model.Slots.AddEx.assert_not_called()
 
 

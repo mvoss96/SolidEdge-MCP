@@ -284,10 +284,11 @@ def create_slot(
 ) -> dict[str, Any]:
     """Create a slot from the active sketch profile.
 
-    width and depth in meters (depth <= 0 cuts through all). 'basic' cuts a slot
-    along an OPEN line path with direction='Normal' (Slots.Add; 'Reverse' records
-    a slot that removes nothing on Solid Edge 2026). 'ex' is unsupported;
-    'sync', 'multi_body' and 'sync_multi_body' take width + depth + direction.
+    width and depth in meters (depth <= 0 cuts through all). 'basic' (Slots.Add)
+    and 'ex' (Slots.AddEx) cut along an OPEN line path; direction 'Normal' cuts
+    along the sketch plane's normal, 'Reverse' against it (on a plane at a top
+    face, whose normal points out of the body, use 'Reverse'). 'sync' is
+    unsupported; 'multi_body' and 'sync_multi_body' take width + depth + direction.
     """
     err = validate_numerics(width=width, depth=depth)
     if err:
