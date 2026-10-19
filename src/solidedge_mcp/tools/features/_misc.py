@@ -154,13 +154,16 @@ def create_mirror(
     mirror_plane_index: int = 3,
     new_file_name: str = "",
     link_to_original: bool = True,
-    allow_mode_switch: bool = False,
     overwrite: bool = False,
+    feature_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Mirror a feature across a reference plane, or save a mirrored part.
+    """Mirror features across a reference plane, or save a mirrored part.
 
     mirror_plane_index is 1-based (1=Top/XY, 2=Right/YZ, 3=Front/XZ, 4+ = user
-    planes). feature_name (see list_features): basic/sync_ex. new_file_name
+    planes). feature_name (see list_features): basic/sync_ex. basic also takes
+    feature_names to mirror several features into one MirrorCopy; it works in
+    ordered and synchronous parts (synchronous: only features created while
+    the part was synchronous). new_file_name
     (absolute .par path) and link_to_original: save_as_part, which needs
     overwrite=true to replace an existing file.
     'sync_ex' (unsupported: MirrorCopies.AddSyncEx needs an [in,out] SAFEARRAY
@@ -175,10 +178,11 @@ def create_mirror(
         }
     match method:
         case "basic":
+            names = list(feature_names or [])
+            if feature_name and feature_name not in names:
+                names.insert(0, feature_name)
             return feature_manager.create_mirror(
-                feature_name=feature_name,
-                mirror_plane_index=mirror_plane_index,
-                allow_mode_switch=allow_mode_switch,
+                feature_names=names, mirror_plane_index=mirror_plane_index
             )
         case "sync_ex":
             return feature_manager.create_mirror_sync_ex(

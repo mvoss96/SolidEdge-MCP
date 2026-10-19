@@ -130,7 +130,7 @@ class TestMirrorSeenByVolume:
         name = stack.feature.list_features()["features"][0]["name"]
         volume_before = stack.doc.get_active_document().Models.Item(1).Body.Volume
 
-        r = stack.feature.create_mirror(name, 2)
+        r = stack.feature.create_mirror([name], 2)
 
         assert r["status"] == "created", r
         assert stack.query.get_face_count()["face_count"] == 6

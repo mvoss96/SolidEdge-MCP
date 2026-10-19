@@ -190,6 +190,11 @@ through the type-library wrapper; the axis runs through the 3D `AxisPoint`
 normal to the plane, a 2D point answers `E_INVALIDARG`). The call was driven
 live by direct COM in an ordered part (16 spokes, 50 teeth, a pattern of 5
 holes, all over 360 degrees); the tool path itself has unit tests only so far.
+`create_mirror(method='basic')` in an ordered part: it called only
+`MirrorCopies.AddSync`, which mirrors synchronous geometry and refused or
+recorded an empty `MirrorCopy` for ordered features. An ordered part now goes
+through `MirrorCopies.Add(RefPlane, n, [features])`, verified by direct COM to
+add exactly the mirrored volume; a synchronous part keeps `AddSync`.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

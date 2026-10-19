@@ -1275,6 +1275,99 @@ class TestCreateMirrorSyncEx:
         mc.AddSyncEx.assert_not_called()
 
 
+class TestCreateMirror:
+    """MirrorCopies.Add in an ordered part, AddSync in a synchronous one."""
+
+    @pytest.fixture(autouse=True)
+    def no_gencache(self, monkeypatch):
+        import win32com.client
+
+        monkeypatch.setattr(win32com.client.gencache, "EnsureDispatch", lambda obj: obj)
+
+    @staticmethod
+    def _features(doc, *names):
+        feats = []
+        for name in names:
+            feat = MagicMock()
+            feat.Name = name
+            feats.append(feat)
+        collection = MagicMock()
+        collection.Count = len(feats)
+        collection.Item.side_effect = lambda i: feats[i - 1]
+        doc.DesignEdgebarFeatures = collection
+        doc.RefPlanes.Count = 3
+        return feats
+
+    def test_ordered_part_uses_add_with_every_feature(self, feature_mgr, managers):
+        from solidedge_mcp.backends.constants import ModelingModeConstants
+
+        _, _, doc, _, model, _ = managers
+        doc.ModelingMode = ModelingModeConstants.seModelingModeOrdered
+        boss, rib = self._features(doc, "Boss", "Rib")
+
+        result = feature_mgr.create_mirror(["Boss", "Rib"], 3)
+
+        assert result["status"] == "created"
+        assert result["method"] == "Add"
+        doc.RefPlanes.Item.assert_called_with(3)
+        model.MirrorCopies.Add.assert_called_once_with(
+            doc.RefPlanes.Item.return_value, 2, [boss, rib]
+        )
+        model.MirrorCopies.AddSync.assert_not_called()
+
+    def test_ordered_part_is_not_switched_to_synchronous(self, feature_mgr, managers):
+        from solidedge_mcp.backends.constants import ModelingModeConstants
+
+        _, _, doc, _, _, _ = managers
+        doc.ModelingMode = ModelingModeConstants.seModelingModeOrdered
+        self._features(doc, "Boss")
+
+        feature_mgr.create_mirror(["Boss"], 3)
+
+        assert doc.ModelingMode == ModelingModeConstants.seModelingModeOrdered
+
+    def test_synchronous_part_uses_add_sync(self, feature_mgr, managers):
+        from solidedge_mcp.backends.constants import ModelingModeConstants
+
+        _, _, doc, _, model, _ = managers
+        doc.ModelingMode = ModelingModeConstants.seModelingModeSynchronous
+        (boss,) = self._features(doc, "Boss")
+
+        result = feature_mgr.create_mirror(["Boss"], 2)
+
+        assert result["method"] == "AddSync"
+        model.MirrorCopies.AddSync.assert_called_once_with(
+            1, [boss], doc.RefPlanes.Item.return_value, False
+        )
+        model.MirrorCopies.Add.assert_not_called()
+
+    def test_an_unknown_feature_is_refused(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        self._features(doc, "Boss")
+
+        result = feature_mgr.create_mirror(["Boss", "Missing"], 3)
+
+        assert "not found" in result["error"]
+        model.MirrorCopies.Add.assert_not_called()
+
+    def test_no_feature_is_refused(self, feature_mgr, managers):
+        _, _, _, _, model, _ = managers
+
+        result = feature_mgr.create_mirror([], 3)
+
+        assert "error" in result
+        model.MirrorCopies.Add.assert_not_called()
+
+    def test_invalid_plane_index(self, feature_mgr, managers):
+        _, _, doc, _, model, _ = managers
+        self._features(doc, "Boss")
+
+        result = feature_mgr.create_mirror(["Boss"], 7)
+
+        assert "Invalid plane index" in result["error"]
+        model.MirrorCopies.Add.assert_not_called()
+
+
 # ============================================================================
 # BATCH 9: PATTERN RECTANGULAR EX
 # ============================================================================

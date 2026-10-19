@@ -11,6 +11,7 @@ from ..constants import (
     DirectionConstants,
     FaceQueryConstants,
     FaceRotateConstants,
+    ModelingModeConstants,
     PatternOffsetTypeConstants,
     PatternTypeConstants,
 )
@@ -309,19 +310,18 @@ class MiscFeaturesMixin:
         }
 
     @verifies_geometry
-    def create_mirror(
-        self, feature_name: str, mirror_plane_index: int, allow_mode_switch: bool = False
-    ) -> dict[str, Any]:
+    def create_mirror(self, feature_names: list[str], mirror_plane_index: int) -> dict[str, Any]:
         """
-        Create a mirror copy of a feature across a reference plane.
+        Mirror one or more features across a reference plane.
 
-        Note: MirrorCopies via COM has known limitations. The ordered-mode
-        Add() method creates a feature object but doesn't persist geometry.
-        AddSync() persists the feature tree entry but may not compute geometry.
-        This is a known Solid Edge COM API limitation.
+        An ordered part uses MirrorCopies.Add(PatternPlane, NumberOfFeatures,
+        FeatureArray); a synchronous part uses MirrorCopies.AddSync, which
+        mirrors synchronous geometry only. Both verified on Solid Edge 2026:
+        AddSync on ordered features records an empty MirrorCopy, Add on the
+        same features adds exactly the mirrored volume.
 
         Args:
-            feature_name: Name of the feature to mirror (from list_features)
+            feature_names: Names of the features to mirror (from list_features)
             mirror_plane_index: 1-based index of the mirror plane
                 (1=Top/XY, 2=Right/YZ, 3=Front/XZ, or higher for user planes)
 
@@ -331,6 +331,9 @@ class MiscFeaturesMixin:
         try:
             import win32com.client as win32
 
+            if not feature_names:
+                return {"error": "No feature given. Pass feature_name or feature_names."}
+
             doc = self.doc_manager.get_active_document()
             models = doc.Models
 
@@ -339,25 +342,13 @@ class MiscFeaturesMixin:
 
             model = models.Item(1)
 
-            # Find the feature by name in DesignEdgebarFeatures
-            features = doc.DesignEdgebarFeatures
-            target_feature = None
-            for i in range(1, features.Count + 1):
-                f = features.Item(i)
-                if f.Name == feature_name:
-                    target_feature = f
-                    break
+            targets = []
+            for name in feature_names:
+                target, error = self._find_feature_by_name(name)
+                if error:
+                    return error
+                targets.append(target)
 
-            if target_feature is None:
-                names = []
-                for i in range(1, features.Count + 1):
-                    names.append(features.Item(i).Name)
-                return {
-                    "error": f"Feature '{feature_name}' not found.",
-                    "available_features": names,
-                }
-
-            # Get the mirror plane
             ref_planes = doc.RefPlanes
             if mirror_plane_index < 1 or mirror_plane_index > ref_planes.Count:
                 return {
@@ -365,43 +356,36 @@ class MiscFeaturesMixin:
                 }
 
             mirror_plane = ref_planes.Item(mirror_plane_index)
-
-            # MirrorCopies.AddSync is synchronous-only: in an ordered part it
-            # raises a bare E_FAIL. Verified against Solid Edge 2026, where the
-            # same call doubles the face count once the mode is switched.
-            err = self._require_synchronous(doc, allow_switch=allow_mode_switch)
-            if err:
-                return err
+            synchronous = (
+                com_get(doc, "ModelingMode") == ModelingModeConstants.seModelingModeSynchronous
+            )
 
             mc = win32.gencache.EnsureDispatch(model.MirrorCopies)
-            try:
-                mirror = mc.AddSync(1, [target_feature], mirror_plane, False)
-            except Exception as exc:
-                # Switching an existing ordered part to synchronous is not
-                # enough: AddSync mirrors synchronous geometry, so a feature
-                # that was built in ordered mode still fails. Verified on
-                # Solid Edge 2026, where the same mirror succeeds when the
-                # part was in synchronous mode before the feature was made.
-                return error_result(
-                    exc,
-                    context=(
-                        "MirrorCopies.AddSync could not mirror "
-                        f"'{feature_name}'. It mirrors synchronous geometry, so the "
-                        "feature must have been created while the part was in "
-                        "synchronous mode. Build the part synchronously from the "
-                        "start, or mirror the sketch and re-create the feature."
-                    ),
-                )
+            if synchronous:
+                try:
+                    mirror = mc.AddSync(len(targets), targets, mirror_plane, False)
+                except Exception as exc:
+                    # AddSync mirrors synchronous geometry, so a feature built
+                    # while the part was ordered still fails after a switch.
+                    return error_result(
+                        exc,
+                        context=(
+                            "MirrorCopies.AddSync could not mirror "
+                            f"{feature_names}. It mirrors synchronous geometry, so the "
+                            "features must have been created while the part was in "
+                            "synchronous mode."
+                        ),
+                    )
+            else:
+                mirror = mc.Add(mirror_plane, len(targets), targets)
 
             return {
                 "status": "created",
                 "type": "mirror_copy",
-                "feature": feature_name,
+                "method": "AddSync" if synchronous else "Add",
+                "features": list(feature_names),
                 "mirror_plane": mirror_plane_index,
                 "name": com_get(mirror, "Name", None),
-                "note": "Mirror feature created via AddSync. "
-                "Geometry may require manual verification "
-                "in Solid Edge UI.",
             }
         except Exception as e:
             return error_result(e)

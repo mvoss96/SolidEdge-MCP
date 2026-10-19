@@ -1224,6 +1224,18 @@ class TestCreateMirror:
             overwrite=False,
         )
 
+    def test_basic_passes_one_feature_as_a_list(self, mock_mgr):
+        mock_mgr.create_mirror.return_value = {"status": "ok"}
+        create_mirror(method="basic", feature_name="Boss", mirror_plane_index=2)
+        mock_mgr.create_mirror.assert_called_once_with(feature_names=["Boss"], mirror_plane_index=2)
+
+    def test_basic_passes_several_features(self, mock_mgr):
+        mock_mgr.create_mirror.return_value = {"status": "ok"}
+        create_mirror(method="basic", feature_name="Boss", feature_names=["Rib", "Boss"])
+        mock_mgr.create_mirror.assert_called_once_with(
+            feature_names=["Rib", "Boss"], mirror_plane_index=3
+        )
+
     @pytest.mark.parametrize("disc", ["basic", "sync_ex", "save_as_part"])
     @pytest.mark.parametrize("bad_index", [0, -1])
     def test_plane_index_below_one_is_rejected(self, mock_mgr, disc, bad_index):
