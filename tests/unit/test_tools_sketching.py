@@ -10,6 +10,7 @@ from solidedge_mcp.tools.sketching import (
     manage_sketch,
     sketch_advanced_modify,
     sketch_constraint,
+    sketch_dimension,
     sketch_modify,
     sketch_project,
 )
@@ -248,14 +249,65 @@ class TestSketchConstraint:
     def test_geometric_defaults_empty_elements(self, mock_mgr):
         mock_mgr.add_constraint.return_value = {"status": "ok"}
         sketch_constraint(type="geometric", constraint_type="Horizontal")
-        mock_mgr.add_constraint.assert_called_once_with(constraint_type="Horizontal", elements=[])
+        mock_mgr.add_constraint.assert_called_once_with(
+            constraint_type="Horizontal", elements=[], keypoint1=0, keypoint2=0
+        )
 
     def test_geometric_passes_elements(self, mock_mgr):
         mock_mgr.add_constraint.return_value = {"status": "ok"}
         sketch_constraint(type="geometric", constraint_type="Horizontal", elements=[1, 2])
         mock_mgr.add_constraint.assert_called_once_with(
-            constraint_type="Horizontal", elements=[1, 2]
+            constraint_type="Horizontal", elements=[1, 2], keypoint1=0, keypoint2=0
         )
+
+    def test_geometric_passes_keypoints(self, mock_mgr):
+        mock_mgr.add_constraint.return_value = {"status": "ok"}
+        sketch_constraint(
+            type="geometric",
+            constraint_type="EqualDirection",
+            elements=[["line", 1], ["arc", 1]],
+            keypoint1=1,
+            keypoint2=2,
+        )
+        mock_mgr.add_constraint.assert_called_once_with(
+            constraint_type="EqualDirection",
+            elements=[["line", 1], ["arc", 1]],
+            keypoint1=1,
+            keypoint2=2,
+        )
+
+
+# === sketch_dimension ===
+
+
+class TestSketchDimension:
+    def test_passes_everything_through(self, mock_mgr):
+        mock_mgr.add_sketch_dimension.return_value = {"status": "created"}
+        result = sketch_dimension(
+            type="distance",
+            elements=[["line", 1], ["ref", 3]],
+            keypoint1=0,
+            axis="y",
+            value=0.01,
+            name="Abstand",
+            formula="W / 4",
+        )
+        assert result == {"status": "created"}
+        mock_mgr.add_sketch_dimension.assert_called_once_with(
+            dimension_type="distance",
+            elements=[["line", 1], ["ref", 3]],
+            keypoint1=0,
+            keypoint2=None,
+            axis="y",
+            value=0.01,
+            name="Abstand",
+            formula="W / 4",
+        )
+
+    def test_rejects_a_non_finite_value(self, mock_mgr):
+        result = sketch_dimension(type="length", elements=[["line", 1]], value=float("nan"))
+        assert "error" in result
+        mock_mgr.add_sketch_dimension.assert_not_called()
 
     def test_unknown(self, mock_mgr):
         result = sketch_constraint(type="bogus")

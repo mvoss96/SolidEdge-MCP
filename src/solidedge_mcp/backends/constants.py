@@ -713,6 +713,15 @@ class MatTablePropIndexConstants:
     seElongation = 31
 
 
+class DimAxisModeConstants:
+    """Dimension.MeasurementAxisEx values, from constant.tlb > DimAxisModeConstants."""
+
+    igDimAxisModeDefault = 1
+    igDimAxisModeImplied = 2
+    igDimAxisModeExplicit = 3
+    igDimAxisModeCoordinate = 4
+
+
 class FeatureStatusConstants:
     """Feature.Status values, from constant.tlb > FeatureStatusConstants."""
 

@@ -53,6 +53,18 @@ All lengths in meters, angles in degrees. Plane indices 1-based
 4. close_sketch()
 5. create_revolve(method="finite", angle=360)
 
+## Fully dimensioned sketch driven by variables
+1. manage_variable(action="add", name="Breite", formula="40", units_type="length")
+2. manage_sketch(action="create", plane="Top")
+3. draw(shape="rectangle", ...) -> "elements": [["line", n], ...] (bottom,
+   right, top, left); corners are welded, edges horizontal/vertical
+4. sketch_dimension(type="length", elements=[bottom], name="Laenge",
+   formula="Breite"); sketch_dimension(type="length", elements=[right], value=0.02)
+5. Position it: sketch_dimension(type="distance", elements=[bottom, ["ref", 3]],
+   value=0.005) and [left, ["ref", 2]]; ["ref", n] is plane n's line in the sketch
+6. manage_sketch(action="close"), create_extrude(...)
+7. manage_variable(action="set_formula", name="Breite", formula="60") resizes the solid
+
 ## Cut a hole through an existing body
 1. create_sketch(plane="Top")
 2. draw_circle(cx=0.05, cy=0.05, radius=0.005)

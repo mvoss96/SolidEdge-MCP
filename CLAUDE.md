@@ -5,7 +5,7 @@ Guidance for Claude Code when working in this repository.
 ## What this is
 
 A Solid Edge MCP server: FastMCP 2.x over pywin32 COM automation. Windows only. MIT.
-Surface: 119 tools, 53 data resources + 2 guide resources, 4 prompts.
+Surface: 120 tools, 53 data resources + 2 guide resources, 4 prompts.
 
 ## Commands
 

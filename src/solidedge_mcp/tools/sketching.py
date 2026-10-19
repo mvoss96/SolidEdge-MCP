@@ -6,7 +6,7 @@ from solidedge_mcp.backends.validation import validate_numerics
 from solidedge_mcp.managers import sketch_manager
 from solidedge_mcp.tools._registry import register_tool
 
-SketchElementType = Literal["line", "circle", "arc", "ellipse", "spline"]
+SketchElementType = Literal["line", "circle", "arc", "ellipse", "spline", "ref"]
 
 # === Composite: manage_sketch ===
 
@@ -102,6 +102,10 @@ def draw(
     polygon: center + radius + sides. ellipse: center + major/minor_radius + angle.
     spline: points [[x,y],...]. arc_3pt: (x1,y1) start, (x2,y2) a point the arc
     passes through, (x3,y3) end. circle_3pt: three points. point: x,y.
+    The result names what was drawn as "element" (["line", 3]) or, for
+    rectangle/polygon, "elements" (rectangle: bottom, right, top, left), for
+    sketch_constraint and sketch_dimension. Rectangle and polygon corners are
+    welded by keypoint relations; rectangle edges are horizontal/vertical.
     """
     err = validate_numerics(
         x1=x1,
@@ -294,6 +298,9 @@ def sketch_constraint(
         "Equal",
         "Concentric",
         "Tangent",
+        "Colinear",
+        "PointOn",
+        "EqualDirection",
     ] = "Horizontal",
     elements: list[list[str | int]] | None = None,
     element1_type: SketchElementType = "line",
@@ -307,10 +314,15 @@ def sketch_constraint(
 
     geometric: constraint_type plus the elements to relate, named either as
     elements=[["line", 1], ["line", 2]] or as element1_type/element1_index and
-    element2_type/element2_index. Type is line/circle/arc/ellipse/spline.
+    element2_type/element2_index. Type is line/circle/arc/ellipse/spline, or
+    "ref" with a 1-based reference plane index for that plane's line in the
+    sketch (["ref", 3] = Front), projected on first use.
     Horizontal/Vertical take one element, the rest take two.
-    keypoint: weld element1 keypoint1 to element2 keypoint2. Keypoints are
-    0=start, 1=end, 2=midpoint (lines/arcs); 0=center (circles).
+    PointOn: keypoint1 of element 1 lies on element 2. EqualDirection: tangent
+    at a joint, element 1 keypoint1 and element 2 keypoint2; use it where the
+    two are already welded, Solid Edge rejects a second Tangent there.
+    keypoint: weld element1 keypoint1 to element2 keypoint2.
+    Keypoints: line 0=start, 1=end; arc 0=center, 1=start, 2=end; circle 0=center.
     """
     match type:
         case "geometric":
@@ -324,7 +336,12 @@ def sketch_constraint(
                     pairs.append([element1_type, element1_index])
                 if element2_index:
                     pairs.append([element2_type, element2_index])
-            return sketch_manager.add_constraint(constraint_type=constraint_type, elements=pairs)
+            return sketch_manager.add_constraint(
+                constraint_type=constraint_type,
+                elements=pairs,
+                keypoint1=keypoint1,
+                keypoint2=keypoint2,
+            )
         case "keypoint":
             return sketch_manager.add_keypoint_constraint(
                 element1_type=element1_type,
@@ -336,6 +353,48 @@ def sketch_constraint(
             )
         case _:
             return {"error": f"Unknown constraint type: {type}"}
+
+
+# === sketch_dimension ===
+
+
+def sketch_dimension(
+    type: Literal["length", "radius", "diameter", "distance", "angle"] = "length",
+    elements: list[list[str | int]] | None = None,
+    keypoint1: int | None = None,
+    keypoint2: int | None = None,
+    axis: Literal["auto", "x", "y"] = "auto",
+    value: float | None = None,
+    name: str = "",
+    formula: str = "",
+) -> dict[str, Any]:
+    """Add a driving dimension in the active sketch. Meters; angles in degrees.
+
+    elements as in sketch_constraint ([["line", 1]], ["ref", 3] for a
+    reference plane's line, 1-based). length: one line. radius/diameter: one
+    circle or arc. angle: two lines. distance: two elements; keypoint1/2 pick a
+    keypoint of each (line 0=start, 1=end; arc 0=center, 1=start, 2=end;
+    circle 0=center, the default for circles and arcs); a line without one is
+    measured perpendicular from the other pick. axis: distance along sketch
+    x or y; auto takes the larger component.
+    value sets the size (omitted: keep the drawn size). name names the
+    dimension's variable; formula drives it (document units, e.g. "W / 2").
+    Change it later with manage_variable(set/set_formula). The result has
+    measured (before value), value (held now) and variable.
+    """
+    err = validate_numerics(value=value)
+    if err:
+        return err
+    return sketch_manager.add_sketch_dimension(
+        dimension_type=type,
+        elements=elements or [],
+        keypoint1=keypoint1,
+        keypoint2=keypoint2,
+        axis=axis,
+        value=value,
+        name=name,
+        formula=formula,
+    )
 
 
 # === Composite: sketch_project ===
@@ -423,5 +482,6 @@ def register(mcp: Any) -> None:
     register_tool(mcp, sketch_modify, tags=tags)
     register_tool(mcp, sketch_advanced_modify, tags=tags, destructive=True)
     register_tool(mcp, sketch_constraint, tags=tags)
+    register_tool(mcp, sketch_dimension, tags=tags)
     register_tool(mcp, sketch_project, tags=tags)
     register_tool(mcp, draw_3d_line, tags=tags)

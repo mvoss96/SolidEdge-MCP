@@ -2,7 +2,7 @@
 
 AI-assisted CAD through the [Model Context Protocol](https://modelcontextprotocol.io). Create, analyze, modify, and export Solid Edge models from Claude or any MCP client.
 
-**119 tools** · **53 resources + 2 guides** · **4 prompts** · Windows only (COM automation) · MIT
+**120 tools** · **53 resources + 2 guides** · **4 prompts** · Windows only (COM automation) · MIT
 
 ## What it does
 

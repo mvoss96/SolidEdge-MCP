@@ -11,7 +11,7 @@ from typing import Any
 from solidedge_mcp.backends.errors import describe_exception, error_result
 
 from .comutil import com_get
-from .constants import FaceQueryConstants, ProfileValidationConstants
+from .constants import DimAxisModeConstants, FaceQueryConstants, ProfileValidationConstants
 from .features._base import verifies_collection_growth
 from .logging import get_logger
 
@@ -216,6 +216,107 @@ def _offset_side_point(profile: Any, distance: float) -> tuple[float, float] | N
     return (centre_x, centre_y + reach)
 
 
+def _keypoint_xy(obj: Any, kind: str, keypoint: int) -> tuple[float, float]:
+    """Coordinates of a Relations2d keypoint: line 0/1/2 = start/end/middle, arc 0/1/2 =
+    centre/start/end, circle 0 = centre."""
+    members = {
+        "line": ("GetStartPoint", "GetEndPoint"),
+        "ref": ("GetStartPoint", "GetEndPoint"),
+        "arc": ("GetCenterPoint", "GetStartPoint", "GetEndPoint"),
+        "circle": ("GetCenterPoint",),
+    }.get(kind)
+    if members is None:
+        raise ValueError(f"Keypoints of a {kind} cannot be dimensioned.")
+    if kind in ("line", "ref") and keypoint == 2:
+        return _line_midpoint(obj)
+    if keypoint < 0 or keypoint >= len(members):
+        raise ValueError(f"A {kind} has no keypoint {keypoint}.")
+    point = _xy(obj, members[keypoint])
+    if point is None:
+        raise ValueError(f"Could not read keypoint {keypoint} of the {kind}.")
+    return point
+
+
+def _line_midpoint(line: Any) -> tuple[float, float]:
+    start, end = _xy(line, "GetStartPoint"), _xy(line, "GetEndPoint")
+    if start is None or end is None:
+        raise ValueError("Could not read the end points of a line.")
+    return ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
+
+
+def _foot_on_line(line: Any, point: tuple[float, float]) -> tuple[float, float]:
+    """The point on the (infinite) line closest to point."""
+    start, end = _xy(line, "GetStartPoint"), _xy(line, "GetEndPoint")
+    if start is None or end is None:
+        raise ValueError("Could not read the end points of a line.")
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    length2 = dx * dx + dy * dy
+    if length2 < 1e-24:
+        return start
+    t = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / length2
+    return (start[0] + t * dx, start[1] + t * dy)
+
+
+def _distance_picks(
+    objs: list[Any], kinds: list[str], keypoints: list[int | None]
+) -> list[tuple[float, float, bool]]:
+    """Pick points and keypoint flags for AddDistanceBetweenObjects.
+
+    A keypoint is measured from its coordinates; a circle or arc without one
+    from its centre. A line without one is picked at the point nearest the
+    other element's pick, so parallel lines measure their gap.
+    """
+    keys = list(keypoints)
+    for i, kind in enumerate(kinds):
+        if keys[i] is None and kind in ("circle", "arc"):
+            keys[i] = 0
+    points: list[tuple[float, float] | None] = [
+        _keypoint_xy(obj, kind, k) if k is not None else None
+        for obj, kind, k in zip(objs, kinds, keys, strict=True)
+    ]
+    if points[0] is None and points[1] is None:
+        points[0] = _line_midpoint(objs[0])
+    for i in (0, 1):
+        if points[i] is None:
+            other = points[1 - i]
+            assert other is not None
+            points[i] = _foot_on_line(objs[i], other)
+    return [(p[0], p[1], keys[i] is not None) for i, p in enumerate(points) if p is not None]
+
+
+def _auto_axis(objs: list[Any], kinds: list[str], key1: bool, key2: bool) -> str:
+    """Measuring axis for a distance: aligned between keypoints, else across the line."""
+    if key1 and key2:
+        return "aligned"
+    i = 0 if not key1 and kinds[0] in ("line", "ref") else 1
+    start, end = _xy(objs[i], "GetStartPoint"), _xy(objs[i], "GetEndPoint")
+    if start is None or end is None:
+        return "aligned"
+    dx, dy = abs(end[0] - start[0]), abs(end[1] - start[1])
+    if dy <= 1e-9 * max(dx, 1e-12):
+        return "y"
+    if dx <= 1e-9 * max(dy, 1e-12):
+        return "x"
+    return "aligned"
+
+
+def _settle_distance_axis(dim: Any, axis: str, both_keypoints: bool, expected: float) -> bool:
+    """Make a distance dimension measure `expected`; True when it does.
+
+    Solid Edge picks the measuring direction itself and MeasurementAxisDirection
+    toggles it, so the value is checked and the direction flipped once. Between
+    two keypoints the distance is aligned until MeasurementAxisEx is explicit.
+    """
+    if axis in ("x", "y"):
+        if both_keypoints:
+            dim.MeasurementAxisEx = DimAxisModeConstants.igDimAxisModeExplicit
+        dim.MeasurementAxisDirection = axis == "y"
+    if abs(float(dim.Value) - expected) <= 1e-6:
+        return True
+    dim.MeasurementAxisDirection = not dim.MeasurementAxisDirection
+    return abs(float(dim.Value) - expected) <= 1e-6
+
+
 def _connect_chain(relations: Any, edges: list[Any]) -> None:
     """Weld each edge's end keypoint (1) to the next edge's start (0), closing the loop."""
     for i, edge in enumerate(edges):
@@ -248,6 +349,13 @@ class SketchManager:
         #: structural frame takes them by index.
         self.active_sketch3d: Any = None
         self.lines_3d: list[Any] = []
+        #: Reference lines projected into the active profile, by plane index.
+        #: ProjectRefPlane's line is not in Lines2d, so it is kept here.
+        self.ref_lines: dict[int, Any] = {}
+        #: True once a feature has consumed the active profile; editing it
+        #: then needs Profile.End, Model.Recompute and RollToFeature.
+        self.active_profile_consumed = False
+        self.active_end_flags: int | None = None
 
     def clear_state(self) -> None:
         """Clear all sketch state. Call this when switching documents."""
@@ -259,6 +367,8 @@ class SketchManager:
         self.accumulated_profiles.clear()
         self.active_sketch3d = None
         self.lines_3d.clear()
+        self.ref_lines.clear()
+        self.active_profile_consumed = False
         self._last_document_handle = None
 
     @verifies_collection_growth("ProfileSets")
@@ -314,6 +424,8 @@ class SketchManager:
             self.active_profile = profile
             self.active_plane_index = plane_index
             self.active_refaxis = None  # Clear any previous axis
+            self.ref_lines.clear()
+            self.active_profile_consumed = False
 
             _logger.info(f"Sketch created on plane: {plane}")
             return {
@@ -358,6 +470,8 @@ class SketchManager:
             self.active_profile = profile
             self.active_plane_index = plane_index
             self.active_refaxis = None
+            self.ref_lines.clear()
+            self.active_profile_consumed = False
 
             return {
                 "status": "created",
@@ -904,8 +1018,10 @@ class SketchManager:
         Resolve a sketch element by type name and 1-based index.
 
         Args:
-            element_type: 'line', 'circle', 'arc', 'ellipse', 'spline'
-            index: 1-based index within that collection
+            element_type: 'line', 'circle', 'arc', 'ellipse', 'spline', or
+                'ref' for the reference line of a reference plane
+            index: 1-based index within that collection; for 'ref' the
+                1-based reference plane index, projected on first use
 
         Returns:
             COM object for the sketch element
@@ -914,6 +1030,8 @@ class SketchManager:
             ValueError: If type or index is invalid
         """
         profile = self.active_profile
+        if element_type.lower() == "ref":
+            return self._ref_line(index)
         type_map = {
             "line": "Lines2d",
             "circle": "Circles2d",
@@ -923,7 +1041,7 @@ class SketchManager:
         }
         collection_name = type_map.get(element_type.lower())
         if not collection_name:
-            valid_types = ", ".join(type_map.keys())
+            valid_types = ", ".join([*type_map.keys(), "ref"])
             raise ValueError(f"Unknown element type: '{element_type}'. Use: {valid_types}")
 
         collection = getattr(profile, collection_name)
@@ -934,20 +1052,47 @@ class SketchManager:
 
         return collection.Item(index)
 
+    def _ref_line(self, plane_index: int) -> Any:
+        """The active profile's reference line for a plane, projected once.
+
+        Raises:
+            ValueError: If the plane index is invalid
+        """
+        line = self.ref_lines.get(plane_index)
+        if line is not None:
+            return line
+        ref_planes = ref_planes_of(self.doc_manager.get_active_document())
+        if ref_planes is None:
+            raise ValueError(_NO_REF_PLANES)
+        if plane_index < 1 or plane_index > ref_planes.Count:
+            raise ValueError(f"Invalid plane_index: {plane_index}. Count: {ref_planes.Count}")
+        if self.active_profile is None:
+            raise ValueError("No active sketch. Call create_sketch() first")
+        line = self.active_profile.ProjectRefPlane(ref_planes.Item(plane_index))
+        self.ref_lines[plane_index] = line
+        return line
+
     def add_constraint(
-        self, constraint_type: str, elements: list[list[str | int]]
+        self,
+        constraint_type: str,
+        elements: list[list[str | int]],
+        keypoint1: int = 0,
+        keypoint2: int = 0,
     ) -> dict[str, Any]:
         """
         Add a geometric constraint to sketch elements.
 
         Elements are specified as [type, index] pairs where type is
-        'line', 'circle', 'arc', 'ellipse', or 'spline' and index is
-        1-based within that collection.
+        'line', 'circle', 'arc', 'ellipse', 'spline' or 'ref' and index is
+        1-based within that collection (for 'ref', the reference plane index).
 
         Args:
             constraint_type: 'Horizontal', 'Vertical', 'Parallel', 'Perpendicular',
-                           'Equal', 'Concentric', 'Tangent'
+                           'Equal', 'Concentric', 'Tangent', 'Colinear',
+                           'PointOn', 'EqualDirection'
             elements: List of [type, index] pairs, e.g. [["line", 1], ["line", 2]]
+            keypoint1: PointOn/EqualDirection: keypoint of the first element
+            keypoint2: EqualDirection: keypoint of the second element
 
         Returns:
             Dict with status
@@ -1000,16 +1145,168 @@ class SketchManager:
                 if len(objs) < 2:
                     return {"error": "Tangent constraint needs 2 elements." + _HOW_TO_NAME}
                 relations.AddTangent(objs[0], objs[1])
+            elif ct == "colinear":
+                if len(objs) < 2:
+                    return {"error": "Colinear constraint needs 2 elements." + _HOW_TO_NAME}
+                relations.AddColinear(objs[0], objs[1])
+            elif ct == "pointon":
+                if len(objs) < 2:
+                    return {"error": "PointOn constraint needs 2 elements." + _HOW_TO_NAME}
+                relations.AddPointOn(objs[0], keypoint1, objs[1])
+            elif ct == "equaldirection":
+                if len(objs) < 2:
+                    return {"error": "EqualDirection constraint needs 2 elements." + _HOW_TO_NAME}
+                relations.AddEqualDirection(objs[0], keypoint1, objs[1], keypoint2)
             else:
                 return {
                     "error": f"Unknown constraint type: "
                     f"'{constraint_type}'. Use: "
                     "Horizontal, Vertical, Parallel, "
                     "Perpendicular, Equal, "
-                    "Concentric, Tangent"
+                    "Concentric, Tangent, Colinear, PointOn, EqualDirection"
                 }
 
-            return {"status": "constraint_added", "type": constraint_type, "elements": elements}
+            result: dict[str, Any] = {
+                "status": "constraint_added",
+                "type": constraint_type,
+                "elements": elements,
+            }
+            if ct == "pointon":
+                result["keypoint1"] = keypoint1
+            elif ct == "equaldirection":
+                result["keypoint1"] = keypoint1
+                result["keypoint2"] = keypoint2
+            self._refresh_if_consumed(result)
+            return result
+        except ValueError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return error_result(e)
+
+    def add_sketch_dimension(
+        self,
+        dimension_type: str,
+        elements: list[list[str | int]],
+        keypoint1: int | None = None,
+        keypoint2: int | None = None,
+        axis: str = "auto",
+        value: float | None = None,
+        name: str = "",
+        formula: str = "",
+    ) -> dict[str, Any]:
+        """Add a driving dimension to the active sketch, optionally named and driven by a formula.
+
+        Args:
+            dimension_type: 'length' (line), 'radius'/'diameter' (circle or arc),
+                'distance' (two elements), 'angle' (two lines)
+            elements: [type, index] pairs as in add_constraint, 'ref' included
+            keypoint1, keypoint2: distance only: measure from this keypoint of
+                the element instead of the element itself
+            axis: distance only: 'x' or 'y' (sketch axis), 'aligned' (straight
+                or perpendicular distance), or 'auto': aligned between two
+                keypoints, else across the line (y for a horizontal line, x
+                for a vertical one, aligned for an oblique one)
+            value: meters, or degrees for an angle; None keeps the geometry
+            name: variable name for the dimension (Variables.PutName)
+            formula: formula for the dimension's variable (Variables.Edit)
+
+        Returns:
+            Dict with the value Solid Edge holds and the variable name
+        """
+        try:
+            if not self.active_profile:
+                return {"error": "No active sketch. Call create_sketch() first"}
+            objs = []
+            for elem in elements:
+                if not isinstance(elem, (list, tuple)) or len(elem) != 2:
+                    return {"error": f"Each element must be [type, index], got: {elem}"}
+                elem_type, elem_index = elem[0], elem[1]
+                if not isinstance(elem_type, str) or not isinstance(elem_index, int):
+                    return {"error": f"Element must be [str, int], got: {elem}"}
+                objs.append(self._get_sketch_element(elem_type, elem_index))
+            kinds = [str(e[0]).lower() for e in elements]
+            needed = 2 if dimension_type in ("distance", "angle") else 1
+            if len(objs) != needed:
+                return {"error": f"A {dimension_type} dimension takes {needed} element(s)."}
+
+            dims = self.active_profile.Dimensions
+            result: dict[str, Any] = {"type": dimension_type, "elements": elements}
+            match dimension_type:
+                case "length":
+                    if kinds[0] != "line":
+                        return {"error": "A length dimension takes a line."}
+                    dim = dims.AddLength(objs[0])
+                case "radius" | "diameter":
+                    if kinds[0] not in ("circle", "arc"):
+                        return {"error": f"A {dimension_type} dimension takes a circle or arc."}
+                    if dimension_type == "radius":
+                        dim = dims.AddRadius(objs[0])
+                    else:
+                        dim = dims.AddCircularDiameter(objs[0])
+                case "angle":
+                    if any(k not in ("line", "ref") for k in kinds):
+                        return {"error": "An angle dimension takes two lines."}
+                    (x1, y1), (x2, y2) = (_line_midpoint(o) for o in objs)
+                    dim = dims.AddAngleBetweenObjects(
+                        objs[0], x1, y1, 0.0, False, objs[1], x2, y2, 0.0, False
+                    )
+                case "distance":
+                    picks = _distance_picks(objs, kinds, [keypoint1, keypoint2])
+                    (x1, y1, key1), (x2, y2, key2) = picks
+                    dim = dims.AddDistanceBetweenObjects(
+                        objs[0], x1, y1, 0.0, key1, objs[1], x2, y2, 0.0, key2
+                    )
+                    if axis == "auto":
+                        axis = _auto_axis(objs, kinds, key1, key2)
+                    expected = {
+                        "x": abs(x2 - x1),
+                        "y": abs(y2 - y1),
+                        "aligned": math.hypot(x2 - x1, y2 - y1),
+                    }[axis]
+                    if not _settle_distance_axis(dim, axis, key1 and key2, expected):
+                        seen = float(dim.Value)
+                        dim.Delete()
+                        return {
+                            "error": (
+                                f"The distance measures {seen} m, not the {axis} distance "
+                                f"{expected} m between the picked points; it was removed. "
+                                "Name keypoints, or pick another axis."
+                            ),
+                            "axis": axis,
+                        }
+                    result["axis"] = axis
+                case _:
+                    return {"error": f"Unknown dimension type: {dimension_type}"}
+
+            is_angle = dimension_type == "angle"
+            measured = float(dim.Value)
+            result["measured"] = math.degrees(measured) if is_angle else measured
+            dim.Constraint = True
+            wanted = None if value is None else (math.radians(value) if is_angle else value)
+            if wanted is not None:
+                dim.Value = wanted
+
+            variables = self.doc_manager.get_active_document().Variables
+            if name:
+                variables.PutName(dim, name)
+            var_name = variables.GetName(dim)
+            if formula:
+                variables.Edit(var_name, formula)
+
+            held = float(dim.Value)
+            result.update(
+                status="created",
+                value=math.degrees(held) if is_angle else held,
+                driving=bool(dim.Constraint),
+                variable=var_name,
+            )
+            if wanted is not None and not formula and abs(held - wanted) > 1e-9:
+                result["error"] = (
+                    f"Solid Edge kept {result['value']} instead of {value}; the sketch "
+                    "may be over-constrained or the dimension measures something else."
+                )
+            self._refresh_if_consumed(result)
+            return result
         except ValueError as e:
             return {"error": str(e)}
         except Exception as e:
@@ -1027,9 +1324,9 @@ class SketchManager:
         """
         Add a keypoint constraint connecting two sketch elements at specific points.
 
-        Keypoint indices are GEOMETRIC, 0-based: 0=start, 1=end, 2=midpoint for
-        lines/arcs; 0=center for circles. (Verified live: AddKeypoint(line, 1,
-        other, 0) welds line's end to other's start.) These are NOT the
+        Keypoint indices are GEOMETRIC, 0-based: line 0=start, 1=end; arc
+        0=center, 1=start, 2=end; circle 0=center. (Verified live:
+        AddKeypoint(line, 1, other, 0) welds line's end to other's start.) These are NOT the
         KeyPointType enum values igKeyPointStart=1/igKeyPointEnd=2 -- that enum
         belongs to other (extent/revolve) APIs and must not be used here.
 
@@ -1054,12 +1351,14 @@ class SketchManager:
             relations = self.active_profile.Relations2d
             relations.AddKeypoint(obj1, keypoint1, obj2, keypoint2)
 
-            return {
+            result: dict[str, Any] = {
                 "status": "constraint_added",
                 "type": "Keypoint",
                 "element1": [element1_type, element1_index, keypoint1],
                 "element2": [element2_type, element2_index, keypoint2],
             }
+            self._refresh_if_consumed(result)
+            return result
         except ValueError as e:
             return {"error": str(e)}
         except Exception as e:
@@ -1095,6 +1394,7 @@ class SketchManager:
             else:
                 end_flags = ProfileValidationConstants.igProfileDefault  # 0
 
+            self.active_end_flags = end_flags
             # Validate the profile. End() returns a status: 0 = OK, < 0 = invalid.
             # Do NOT suppress -- the validation result is the whole point.
             try:
@@ -1260,8 +1560,33 @@ class SketchManager:
         return list(self.accumulated_profiles)
 
     def clear_accumulated_profiles(self) -> None:
-        """Clear the accumulated profiles list."""
+        """Clear the accumulated profiles list; a feature has consumed them."""
+        if any(p is self.active_profile for p in self.accumulated_profiles):
+            self.active_profile_consumed = True
         self.accumulated_profiles.clear()
+
+    def _refresh_if_consumed(self, result: dict[str, Any]) -> None:
+        """Bring the model forward after editing a profile a feature already uses.
+
+        A new relation or dimension on such a profile changes nothing until the
+        profile is ended again; that rolls the model back, and Model.Recompute
+        plus RollToFeature on the last feature brings it forward with the new
+        sketch (Solid Edge 2026).
+        """
+        if not self.active_profile_consumed or "error" in result or self.active_profile is None:
+            return
+        flags = self.active_end_flags
+        if flags is None:
+            flags = ProfileValidationConstants.igProfileClosed
+        self.active_profile.End(flags)
+        doc = self.doc_manager.get_active_document()
+        models = com_get(doc, "Models")
+        if models is not None and models.Count > 0:
+            models.Item(1).Recompute()
+        features = com_get(doc, "DesignEdgebarFeatures")
+        if features is not None and features.Count > 0:
+            features.Item(features.Count).RollToFeature()
+        result["model_recomputed"] = True
 
     def sketch_fillet(self, radius: float) -> dict[str, Any]:
         """
@@ -1741,8 +2066,9 @@ class SketchManager:
         """
         Project a reference plane into the active sketch.
 
-        Uses Profile.ProjectRefPlane(ReferencePlane) to project a reference plane
-        as a construction line in the sketch.
+        Uses Profile.ProjectRefPlane(ReferencePlane). The returned line is not
+        in Lines2d, so it is kept and named ["ref", plane_index] for relations
+        and dimensions. Projecting the same plane twice reuses the first line.
 
         Args:
             plane_index: 1-based index of the reference plane to project
@@ -1754,23 +2080,15 @@ class SketchManager:
             if not self.active_profile:
                 return {"error": "No active sketch. Call create_sketch() first"}
 
-            profile = self.active_profile
-            doc = self.doc_manager.get_active_document()
-            ref_planes = ref_planes_of(doc)
-            if ref_planes is None:
-                return {"error": _NO_REF_PLANES}
-
-            if plane_index < 1 or plane_index > ref_planes.Count:
-                return {"error": f"Invalid plane_index: {plane_index}. Count: {ref_planes.Count}"}
-
-            ref_plane = ref_planes.Item(plane_index)
-            result = profile.ProjectRefPlane(ref_plane)
-
+            result = self._ref_line(plane_index)
             return {
                 "status": "projected",
                 "plane_index": plane_index,
+                "element": ["ref", plane_index],
                 "projected_geometry": str(type(result).__name__) if result else "unknown",
             }
+        except ValueError as e:
+            return {"error": str(e)}
         except Exception as e:
             return error_result(e)
 
