@@ -152,7 +152,7 @@ question on this install:
 | `create_blend` | `Blends.Add(1, SelectSetArray, RadiusArray, ...)` answers `E_FAIL` with nested edge arrays plain or VARIANT-wrapped, one edge or a face's four (Solid Edge 2026). `create_round` takes the same edges through `Rounds.Add`. Refuses before COM. |
 | `create_thread` (basic, physical) | `Threads.Add(HoleData, 1, [cylinder], [end face])` answers `E_INVALIDARG` for an extruded boss and for a cut hole alike, with every `HoleData` this server can build -- including one the online reference's route fills in (`Standard = "ISO Metric"`, `Size`, `ThreadDataByDescription`, a depth method and depth) and every adjacent end face. The Siemens developer community reports the same since 2016 ("NOTHING WORKED" across VB.NET and C++ array shapes; advice: file an incident) -- [Parameters for Threads.Add Method](https://community.sw.siemens.com/s/question/0D54O000061xqWfSAI/parameters-for-threadsadd-method). Retried 2026-10-19 in ordered and synchronous parts: the end as a face or an edge, the arrays as `VT_ARRAY` of `VT_DISPATCH`/`VT_UNKNOWN`/`VT_VARIANT` (also by reference) through raw `Invoke`, `AddEx` alike; in `Training/Pin1.par` even the `HoleData` of the UI-made `Thread_1` is refused for every cylinder/face pair, so the `HoleData` is not the cause. The refusal used to point at `create_hole(method='threaded')`, which does not exist; it now names the UI Thread command. Refuses before COM. |
 | `create_contour_flange` (sync, sync_with_bend, sync_ex) | `ContourFlanges.AddSync`, `AddSyncByBendDeductionOrBendAllowance` and `AddSyncEx` all answer `E_INVALIDARG` in a synchronous document with the open line from the tab edge on the perpendicular base plane. Refuse before COM. |
-| `create_louver` (basic, sync) | `Louvers.Add` records `Louver_1` that never solves, with the line on the base plane or a plane through the top face, both directions, 1 and 3 mm deep, and every `Type`/`RoundType`/`DieRadius`/`DimensionType` combination (nine placements); `Louvers.AddSync` on a synchronous tab's top face answers 0x807B0086. Refuses before COM. |
+| `create_louver` (sync) | `Louvers.AddSync` on a synchronous tab's top face answers 0x807B0086. Refuses before COM. |
 | `create_contour_flange` (ex) | `ContourFlanges.AddEx` and `Add` answer `E_FAIL` to 52 open-profile placements: from the tab's corner and from the interior of an edge, on the base planes and on planes perpendicular to the edge, both projection sides. Refuses before COM. |
 | `create_lofted_surface`, `_v2`, `create_bounded_surface` | `LoftedSurfaces.Add` answers `E_INVALIDARG` to 13 argument shapes including the one that builds `Models.AddLoftedProtrusion` from the same two profiles and the one the [online reference](https://support.industrysoftware.automation.siemens.com/trainings/se/106/api/SolidEdgePart~LoftedSurfaces~Add.html) documents (`Origins = 0` per circular section, every extent and tangent `igNone`), on `Sketches`-based profiles as well, `Add2` answers it to the same profiles, and `BlueSurfs.Add` answers it whatever `Origins` holds (the declared dispatch array of section circles, the profiles, `None`). All three refuse before COM. |
 | `create_swept_surface` | builds on a fresh instance once `Origins=[element]` and `OriginRefs=keypoint` (`comutil.profile_origin_element` records the shape; `None` for both is the `E_FAIL` it used to return) -- and took the Solid Edge process down on 3 of 5 calls once a session had been through a few documents. A crash is worse than a refusal; refuses before COM. |
@@ -243,6 +243,18 @@ back). The `*BendDeductionOrBendAllowance` calls take `VT_EMPTY` in their
 keypoint slots (`None` answers `E_POINTER`); `AddFlangeByFace*` takes the sheet
 face that holds the edge as reference. An edge on a thin side face answers
 `E_POINTER`.
+`create_louver(method='basic')`: `Louvers.Add` solves only when its profile
+lies on a plane whose parent is the sheet face. The louver in
+`Training/sesscfl.psm` has `ProfileDefiningFace` = a Face and its plane has
+`ParentPlane` = that face; API louvers added in that document on its plane
+build (111 -> 119 faces), on a `RefPlane` parallel to Top at the same height
+they do not. The tool copies the sketch's lines onto
+`RefPlanes.AddParallelByDistance(sheet face, 0, igRight)` (coordinates through
+`Convert2DCoordinate`/`Convert3DCoordinate`, since that plane's axes differ)
+and builds from the copy: 6 -> 14 faces on an ordered tab, top or bottom face,
+both height directions. Some depth/height pairs still do not solve (6 mm deep
+and 5.5 mm high, 2 mm and 1 mm, on 1 mm material); that louver is deleted and
+reported.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

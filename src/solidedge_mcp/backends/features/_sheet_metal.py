@@ -16,8 +16,10 @@ from ..constants import (
     ExtentTypeConstants,
     FaceQueryConstants,
     FeaturePropertyConstants,
+    FeatureStatusConstants,
     KeyPointExtentConstants,
     LoftSweepConstants,
+    LouverFeatureConstants,
     ModelingModeConstants,
     OffsetSideConstants,
     SETargetConstructionBodyOption,
@@ -946,47 +948,130 @@ class SheetMetalMixin:
         except Exception as e:
             return error_result(e)
 
+    @staticmethod
+    def _coplanar_face(model: Any, points: list[tuple[float, float, float]]) -> Any:
+        """The first planar face of the body whose plane holds every point, or None."""
+        faces = model.Body.Faces(FaceQueryConstants.igQueryAll)
+        for i in range(1, faces.Count + 1):
+            face = faces.Item(i)
+            try:
+                root = face.Geometry.GetRootPoint([0.0] * 3)
+                normal = face.Geometry.GetNormalVector([0.0] * 3)
+            except Exception:  # not a plane
+                continue
+            if all(
+                abs(sum((pt[k] - root[k]) * normal[k] for k in range(3))) < 1e-7 for pt in points
+            ):
+                return face
+        return None
+
     @verifies_geometry
     def create_louver(
         self, depth: float, direction: str = "Normal", height: float = 0.0
     ) -> dict[str, Any]:
         """
-        Create a louver feature (sheet metal vent).
+        Create a louver along the active sketch's line (sheet metal).
 
-        Louvers are formed openings used for ventilation in sheet metal parts.
-        Requires an active sketch profile and an existing sheet metal base feature.
-
-        Uses Louvers.Add(Profile, Depth, DepthDirection, Height,
-        HeightDirection, [Type], [RoundType], [DieRadius], [DimensionType]).
+        Louvers.Add solves only when its profile lies on a plane whose parent
+        is the sheet face, which is what a louver made in the UI has
+        (ProfileDefiningFace is a Face). On a reference plane, even one
+        coincident with that face, it records a louver that never solves
+        (Solid Edge 2026). So the sketch's lines are copied onto a plane made
+        with RefPlanes.AddParallelByDistance(face, 0) on the coplanar sheet
+        face, and the louver is built from the copy. Some depth/height pairs
+        do not solve either (6 mm deep, 5.5 mm high on 1 mm material); such a
+        louver is deleted and reported.
 
         Args:
             depth: Louver depth in meters
-            direction: 'Normal' or 'Reverse'
-            height: Louver height in meters (required by the COM call)
+            direction: 'Normal' or 'Reverse': the side the louver is formed toward
+            height: Louver height in meters
 
         Returns:
             Dict with status and louver info
         """
-        # Louvers.Add records a Louver (Louver_1, in the Louvers collection)
-        # that never solves: the body's range, volume and face count are
-        # unchanged, with the line on the base plane or on a plane through
-        # the top face, both depth directions, depths of 1 and 3 mm, and with
-        # every Type / RoundType / DieRadius / DimensionType combination the
-        # optional parameters take (Solid Edge 2026, nine placements). Say so
-        # rather than leave a dead feature behind.
-        return {
-            "error": (
-                "Louvers.Add records a louver that Solid Edge 2026 never solves -- "
-                "no geometry with the values a UI-made louver holds, on a plane through "
-                "the sheet face with a ProfileDefiningFace recorded -- and Louvers.AddSync "
-                "answers 0x807B0086. Use the Solid Edge UI for louvers; create_dimple, "
-                "create_drawn_cutout and create_stamped(bead) work."
-            ),
-            "unsupported": True,
-            "depth": depth,
-            "direction": direction,
-            "height": height,
-        }
+        try:
+            doc = self.doc_manager.get_active_document()
+            profile = self.sketch_manager.get_active_sketch()
+            if not profile:
+                return {"error": "No active sketch profile. Draw a line and close the sketch."}
+            err = self._require_open_profile(profile, "louver")
+            if err:
+                return err
+            if height <= 0 or depth <= 0:
+                return {"error": "Louvers.Add needs a positive depth and height (meters)."}
+            models = doc.Models
+            if models.Count == 0:
+                return {"error": "No base feature exists. Create a sheet metal base tab first."}
+            model = models.Item(1)
+
+            lines = profile.Lines2d
+            segments = []
+            for i in range(1, lines.Count + 1):
+                line = lines.Item(i)
+                segments.append(
+                    (
+                        profile.Convert2DCoordinate(*line.GetStartPoint()),
+                        profile.Convert2DCoordinate(*line.GetEndPoint()),
+                    )
+                )
+            if not segments:
+                return {"error": "A louver needs a line in the sketch."}
+            face = self._coplanar_face(model, [pt for seg in segments for pt in seg])
+            if face is None:
+                return {
+                    "error": (
+                        "The sketch does not lie on a face of the sheet. Sketch the "
+                        "louver line on the plane of the sheet's top or bottom face."
+                    )
+                }
+
+            plane = doc.RefPlanes.AddParallelByDistance(face, 0.0, DirectionConstants.igRight)
+            copy = doc.ProfileSets.Add().Profiles.Add(plane)
+            for start, end in segments:
+                x1, y1 = copy.Convert3DCoordinate(*start)[:2]
+                x2, y2 = copy.Convert3DCoordinate(*end)[:2]
+                copy.Lines2d.AddBy2Points(x1, y1, x2, y2)
+            copy.End(0)
+
+            height_side = (
+                LouverFeatureConstants.seLouverHeightReverseNormal
+                if direction == "Reverse"
+                else LouverFeatureConstants.seLouverHeightNormal
+            )
+            louver = model.Louvers.Add(
+                copy,
+                depth,
+                LouverFeatureConstants.seLouverDepthDirectionLeft,
+                height,
+                height_side,
+            )
+            model.Recompute()
+            status = com_get(louver, "Status")
+            if not status or status[0] != FeatureStatusConstants.igFeatureOK:
+                with contextlib.suppress(Exception):
+                    louver.Delete()
+                return {
+                    "error": (
+                        f"Solid Edge did not solve a louver {depth} m deep and {height} m "
+                        "high on this sheet; it was removed. A louver made in the UI on "
+                        "1 mm material is 6 mm deep and 4 mm high."
+                    ),
+                    "depth": depth,
+                    "height": height,
+                }
+
+            self.sketch_manager.clear_accumulated_profiles()
+            return {
+                "status": "created",
+                "type": "louver",
+                "name": com_get(louver, "Name"),
+                "depth": depth,
+                "height": height,
+                "direction": direction,
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_gusset(self, thickness: float, direction: str = "Normal") -> dict[str, Any]:

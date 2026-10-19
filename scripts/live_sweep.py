@@ -234,6 +234,12 @@ CONTEXTS: dict[str, list[Step]] = {
         ("draw", {"shape": "line", "x1": 0.04, "y1": 0.0, "x2": 0.04, "y2": 0.048}),
         ("manage_sketch", {"action": "close"}),
     ],
+    "sheet_louver_line": _sheet()
+    + [
+        ("manage_sketch", {"action": "create", "plane": "Top"}),
+        ("draw", {"shape": "line", "x1": 0.02, "y1": 0.024, "x2": 0.06, "y2": 0.024}),
+        ("manage_sketch", {"action": "close"}),
+    ],
     "asm": _asm(1),
     "asm_lines": _asm(1)
     + [("draw_3d_line", {"x1": 0.0, "y1": 0.0, "z1": 0.0, "x2": 0.3, "y2": 0.0, "z2": 0.0})],
@@ -497,7 +503,7 @@ CASES: list[Case] = [
     Case("create_dimple", {"method": "basic", "depth": 0.005}, "sheet_circle_closed"),
     Case("create_drawn_cutout", {"method": "basic", "depth": 0.005}, "sheet_circle_closed"),
     Case(
-        "create_louver", {"method": "basic", "depth": 0.003, "height": 0.005}, "sheet_line_closed"
+        "create_louver", {"method": "basic", "depth": 0.006, "height": 0.004}, "sheet_louver_line"
     ),
     Case(
         "create_lofted_flange",

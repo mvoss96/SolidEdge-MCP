@@ -396,10 +396,11 @@ def create_louver(
 ) -> dict[str, Any]:
     """Create a louver from the active sketch profile (sheet metal).
 
-    The sketch must be an open line where the louver runs: a closed shape is
-    refused. depth and height in meters; Louvers.Add requires a positive height, so
-    'basic' fails without it. direction is the side the material is formed
-    toward. 'sync' (unsupported: Louvers.AddSync needs a target face plus
+    The sketch must be an open line where the louver runs, drawn on the plane
+    of the sheet's top or bottom face and clear of its edges: a closed shape is
+    refused. depth and height in meters, both positive; height well below depth
+    (6 mm deep, 4 mm high builds on 1 mm material). direction is the side the
+    material is formed toward. 'sync' (unsupported: Louvers.AddSync needs a target face plus
     origin and orientation coordinate arrays that cannot be supplied here);
     use 'basic'.
     """

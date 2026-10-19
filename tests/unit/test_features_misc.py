@@ -413,21 +413,84 @@ class TestCreateBead:
 
 
 class TestCreateLouver:
-    """Louvers.Add records a louver Solid Edge 2026 never solves; no call is made."""
+    """The sketch line is copied onto a plane parented on the sheet face.
 
-    def test_refuses_with_the_evidence(self, feature_mgr, managers):
-        _, _, _, _, model, _ = managers
-        louvers = MagicMock()
-        model.Louvers = louvers
+    Louvers.Add on a reference plane records a louver that never solves;
+    on a plane made from the sheet face it builds (Solid Edge 2026).
+    """
 
-        result = feature_mgr.create_louver(0.005, "Reverse", height=0.008)
+    @staticmethod
+    def _sheet(managers, status=1216476310):
+        doc_mgr, sketch_mgr, doc, _, model, _ = managers
+        profile = MagicMock(name="sketch")
+        for name in ("Circles2d", "Ellipses2d", "Boundaries2d"):
+            getattr(profile, name).Count = 0
+        line = MagicMock()
+        line.GetStartPoint.return_value = (0.02, 0.024)
+        line.GetEndPoint.return_value = (0.06, 0.024)
+        profile.Lines2d.Count = 1
+        profile.Lines2d.Item.return_value = line
+        profile.Convert2DCoordinate.side_effect = lambda x, y: (x, y, 0.001)
+        sketch_mgr.get_active_sketch.return_value = profile
 
-        assert result["unsupported"] is True
-        assert "never solves" in result["error"]
-        assert result["depth"] == 0.005
-        assert result["direction"] == "Reverse"
-        assert result["height"] == 0.008
-        louvers.Add.assert_not_called()
+        side = MagicMock(name="side face")
+        side.Geometry.GetRootPoint.return_value = (0.0, 0.0, 0.0)
+        side.Geometry.GetNormalVector.return_value = (0.0, 1.0, 0.0)
+        top = MagicMock(name="top face")
+        top.Geometry.GetRootPoint.return_value = (0.0, 0.0, 0.001)
+        top.Geometry.GetNormalVector.return_value = (0.0, 0.0, 1.0)
+        faces = MagicMock()
+        faces.Count = 2
+        faces.Item.side_effect = lambda i: [None, side, top][i]
+        model.Body.Faces.return_value = faces
+
+        copy = doc.ProfileSets.Add.return_value.Profiles.Add.return_value
+        copy.Convert3DCoordinate.side_effect = lambda x, y, z: (x + 1, y + 1, 0.0)
+        model.Louvers.Add.return_value.Status = (status, None)
+        return doc, model, top, copy
+
+    def test_builds_from_a_copy_on_a_plane_on_the_coplanar_face(self, feature_mgr, managers):
+        doc, model, top, copy = self._sheet(managers)
+
+        result = feature_mgr.create_louver(0.006, "Normal", height=0.004)
+
+        assert result["status"] == "created", result
+        doc.RefPlanes.AddParallelByDistance.assert_called_once_with(top, 0.0, 2)
+        copy.Lines2d.AddBy2Points.assert_called_once_with(1.02, 1.024, 1.06, 1.024)
+        model.Louvers.Add.assert_called_once_with(copy, 0.006, 1, 0.004, 7)
+
+    def test_reverse_forms_the_other_way(self, feature_mgr, managers):
+        _, model, _, copy = self._sheet(managers)
+
+        feature_mgr.create_louver(0.006, "Reverse", height=0.004)
+
+        assert model.Louvers.Add.call_args.args[4] == 8  # seLouverHeightReverseNormal
+
+    def test_an_unsolved_louver_is_deleted_and_reported(self, feature_mgr, managers):
+        _, model, _, _ = self._sheet(managers, status=1216476311)
+
+        result = feature_mgr.create_louver(0.006, height=0.0055)
+
+        assert "did not solve" in result["error"]
+        model.Louvers.Add.return_value.Delete.assert_called_once_with()
+
+    def test_a_sketch_off_the_sheet_is_refused(self, feature_mgr, managers):
+        _, model, _, _ = self._sheet(managers)
+        sketch = feature_mgr.sketch_manager.get_active_sketch.return_value
+        sketch.Convert2DCoordinate.side_effect = lambda x, y: (x, y, 0.05)
+
+        result = feature_mgr.create_louver(0.006, height=0.004)
+
+        assert "face of the sheet" in result["error"]
+        model.Louvers.Add.assert_not_called()
+
+    def test_a_zero_height_is_refused(self, feature_mgr, managers):
+        _, model, _, _ = self._sheet(managers)
+
+        result = feature_mgr.create_louver(0.006, height=0.0)
+
+        assert "positive" in result["error"]
+        model.Louvers.Add.assert_not_called()
 
 
 # ============================================================================

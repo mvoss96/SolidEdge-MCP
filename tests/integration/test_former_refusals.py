@@ -130,3 +130,23 @@ class TestOrderedFlanges:
             assert flange.BendAngle == pytest.approx(0.7853981633974483)
         if method == "create_flange_with_bend_calc":
             assert flange.GetBendCalculationMethodAndValue() == (1, pytest.approx(0.0005))
+
+
+class TestLouver:
+    @pytest.mark.parametrize("direction", ["Normal", "Reverse"])
+    def test_a_line_on_the_sheet_plane_forms_a_louver(self, stack, new_sheet_metal, direction):
+        from tests.integration.test_synchronous_flange_split_thicken import _tab
+
+        _tab(stack)
+        doc = stack.doc.get_active_document()
+        faces_before = doc.Models.Item(1).Body.Faces(1).Count
+        stack.sketch.create_sketch("Top")
+        stack.sketch.draw_line(0.02, 0.024, 0.06, 0.024)
+        stack.sketch.close_sketch(closed=False)
+
+        r = stack.feature.create_louver(0.006, direction, height=0.004)
+
+        assert r.get("status") == "created", r
+        louver = doc.Models.Item(1).Louvers.Item(1)
+        assert louver.Status[0] == 1216476310  # igFeatureOK
+        assert doc.Models.Item(1).Body.Faces(1).Count > faces_before
