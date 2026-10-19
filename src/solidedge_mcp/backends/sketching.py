@@ -216,6 +216,12 @@ def _offset_side_point(profile: Any, distance: float) -> tuple[float, float] | N
     return (centre_x, centre_y + reach)
 
 
+def _connect_chain(relations: Any, edges: list[Any]) -> None:
+    """Weld each edge's end keypoint (1) to the next edge's start (0), closing the loop."""
+    for i, edge in enumerate(edges):
+        relations.AddKeypoint(edge, 1, edges[(i + 1) % len(edges)], 0)
+
+
 #: How to name the elements a constraint applies to. Both spellings work; the
 #: element1_*/element2_* one used to be read only by the keypoint branch, so
 #: naming elements that way sent an empty list and the call asked for elements
@@ -370,10 +376,15 @@ class SketchManager:
             # Get Lines2d collection
             lines = self.active_profile.Lines2d
 
-            # Add line
             lines.AddBy2Points(x1, y1, x2, y2)
 
-            return {"status": "created", "type": "line", "start": [x1, y1], "end": [x2, y2]}
+            return {
+                "status": "created",
+                "type": "line",
+                "start": [x1, y1],
+                "end": [x2, y2],
+                "element": ["line", lines.Count],
+            }
         except Exception as e:
             return error_result(e)
 
@@ -386,7 +397,6 @@ class SketchManager:
             # Get Circles2d collection
             circles = self.active_profile.Circles2d
 
-            # Add circle by center and radius
             circles.AddByCenterRadius(center_x, center_y, radius)
 
             return {
@@ -394,6 +404,7 @@ class SketchManager:
                 "type": "circle",
                 "center": [center_x, center_y],
                 "radius": radius,
+                "element": ["circle", circles.Count],
             }
         except Exception as e:
             return error_result(e)
@@ -404,14 +415,20 @@ class SketchManager:
             if not self.active_profile:
                 return {"error": "No active sketch. Call create_sketch() first"}
 
-            # Rectangles are typically drawn as 4 lines
             lines = self.active_profile.Lines2d
-
-            # Draw 4 sides of rectangle
-            lines.AddBy2Points(x1, y1, x2, y1)  # Bottom
-            lines.AddBy2Points(x2, y1, x2, y2)  # Right
-            lines.AddBy2Points(x2, y2, x1, y2)  # Top
-            lines.AddBy2Points(x1, y2, x1, y1)  # Left
+            edges = [
+                lines.AddBy2Points(x1, y1, x2, y1),  # bottom
+                lines.AddBy2Points(x2, y1, x2, y2),  # right
+                lines.AddBy2Points(x2, y2, x1, y2),  # top
+                lines.AddBy2Points(x1, y2, x1, y1),  # left
+            ]
+            first = lines.Count - 3
+            relations = self.active_profile.Relations2d
+            _connect_chain(relations, edges)
+            relations.AddHorizontal(edges[0])
+            relations.AddVertical(edges[1])
+            relations.AddHorizontal(edges[2])
+            relations.AddVertical(edges[3])
 
             return {
                 "status": "created",
@@ -419,6 +436,8 @@ class SketchManager:
                 "corner1": [x1, y1],
                 "corner2": [x2, y2],
                 "lines": 4,
+                "elements": [["line", first + i] for i in range(4)],
+                "relations": "corners connected; bottom/top horizontal, right/left vertical",
             }
         except Exception as e:
             return error_result(e)
@@ -451,7 +470,6 @@ class SketchManager:
             # Get Arcs2d collection
             arcs = self.active_profile.Arcs2d
 
-            # Add arc by center and endpoints
             arcs.AddByCenterStartEnd(center_x, center_y, start_x, start_y, end_x, end_y)
 
             return {
@@ -461,6 +479,7 @@ class SketchManager:
                 "radius": radius,
                 "start_angle": start_angle,
                 "end_angle": end_angle,
+                "element": ["arc", arcs.Count],
             }
         except Exception as e:
             return error_result(e)
@@ -488,11 +507,13 @@ class SketchManager:
                 y = center_y + radius * math.sin(angle)
                 points.append((x, y))
 
-            # Draw lines connecting vertices
+            edges = []
             for i in range(sides):
                 x1, y1 = points[i]
                 x2, y2 = points[(i + 1) % sides]
-                lines.AddBy2Points(x1, y1, x2, y2)
+                edges.append(lines.AddBy2Points(x1, y1, x2, y2))
+            first = lines.Count - sides + 1
+            _connect_chain(self.active_profile.Relations2d, edges)
 
             return {
                 "status": "created",
@@ -500,6 +521,8 @@ class SketchManager:
                 "center": [center_x, center_y],
                 "radius": radius,
                 "sides": sides,
+                "elements": [["line", first + i] for i in range(sides)],
+                "relations": "corners connected",
             }
         except Exception as e:
             return error_result(e)
@@ -645,6 +668,7 @@ class SketchManager:
                 "along": [along_x, along_y],
                 "end": [end_x, end_y],
                 "method": "start_along_end",
+                "element": ["arc", arcs.Count],
             }
         except Exception as e:
             return error_result(e)
@@ -685,6 +709,7 @@ class SketchManager:
                 "center": [center_x, center_y],
                 "radius": radius,
                 "method": "2_points",
+                "element": ["circle", circles.Count],
             }
         except Exception as e:
             return error_result(e)
@@ -719,6 +744,7 @@ class SketchManager:
                 "point2": [x2, y2],
                 "point3": [x3, y3],
                 "method": "3_points",
+                "element": ["circle", circles.Count],
             }
         except Exception as e:
             return error_result(e)
@@ -1605,6 +1631,7 @@ class SketchManager:
                 "start": [x1, y1],
                 "end": [x2, y2],
                 "is_construction": is_construction,
+                "element": ["line", profile.Lines2d.Count],
             }
         except Exception as e:
             return error_result(e)
