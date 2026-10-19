@@ -161,7 +161,7 @@ question on this install:
 | `create_assembly_swept_protrusion` | `E_INVALIDARG` with `Origins` as inner VARIANTs (the shape the part-level sweep needs) and `E_FAIL` as plain tuples or lists; the argument shape is not the cause. |
 
 Turned from refusals into working creators on 2026-09-17, each driven live and
-pinned: `select_set(action='all')` on a draft (`SelectSet.AddAll` is a 2D sheet call -- Siemens' only example is a draft with an active sheet -- and selects every sheet entity there; a part or assembly answers E_FAIL and is refused before the call); `add_assembly_relation(planar|axial)`, `add_assembly_constraint(mate|align|planar_align|axial_align)` (`AssemblyDocument.CreateReference(occurrence, face)` wraps a face of the occurrence's part document in the Reference that `Relations3d.AddPlanar`/`AddAxial` want -- Siemens' "Working with References" page; faces, RefPlanes and AsmRefPlanes handed over directly all answered 0x80040225. Planar constraining points are the faces' range midpoints. Two placed boxes mate, two cylinders go coaxial: Relations3d grows by one); `create_lofted_flange` (basic, advanced: `Models.AddLoftedFlange` with `Origins` = each section's first `Line2d`/`Arc2d` object, `OriginRefs` = `igStart` per section and `igNFType` last -- the community sample's shape, verified on this server's own profiles; two open lines on parallel planes give a 6-face sheet); `create_stamped(bead)` (`Beads.Add` with the cross-section a UI-made bead
+pinned: `select_set(action='all')` on a draft (`SelectSet.AddAll` is a 2D sheet call -- Siemens' only example is a draft with an active sheet -- and selects every sheet entity there; a part or assembly answers E_FAIL -- since 2026-10-19 those add each feature-tree entry or occurrence with `SelectSet.Add` instead); `add_assembly_relation(planar|axial)`, `add_assembly_constraint(mate|align|planar_align|axial_align)` (`AssemblyDocument.CreateReference(occurrence, face)` wraps a face of the occurrence's part document in the Reference that `Relations3d.AddPlanar`/`AddAxial` want -- Siemens' "Working with References" page; faces, RefPlanes and AsmRefPlanes handed over directly all answered 0x80040225. Planar constraining points are the faces' range midpoints. Two placed boxes mate, two cylinders go coaxial: Relations3d grows by one); `create_lofted_flange` (basic, advanced: `Models.AddLoftedFlange` with `Origins` = each section's first `Line2d`/`Arc2d` object, `OriginRefs` = `igStart` per section and `igNFType` last -- the community sample's shape, verified on this server's own profiles; two open lines on parallel planes give a 6-face sheet); `create_stamped(bead)` (`Beads.Add` with the cross-section a UI-made bead
 reports -- circular, rounded, punched ends -- and `BeadSide` = the two
 `*SideDummy` members; igLeft/igRight answer E_FAIL; 6 -> 20 faces on the base
 plane and on a plane through the sheet face alike); `create_slot` (`Slots.Add` along an open line with a finite or
@@ -219,6 +219,12 @@ folder/path ...") shows a progress bar, returns `True` and writes nothing for a
 file, a folder, `*.par` -> `*.stp` patterns and STEP -> `.par` alike. A STEP
 input does not open in the background (`E_FAIL`) and is refused towards
 `import_file`.
+`select_set(action='all')` in a part, sheet-metal part or assembly:
+`SelectSet.AddAll` answers `E_FAIL` there typed, late-bound and through raw
+`Invoke`, and Solid Edge has no 3D select-all command (`*EditSelectAll` = 40023
+exists only for drafts, layouts and profiles). Each `DesignEdgebarFeatures`
+entry (part) or occurrence (assembly) now goes in through `SelectSet.Add`; a
+draft keeps `AddAll`.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

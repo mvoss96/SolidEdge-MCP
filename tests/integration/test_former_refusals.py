@@ -26,3 +26,27 @@ class TestConvertByFilePath:
         assert out.exists() and out.stat().st_size > 1000
         assert out.read_text(errors="ignore").startswith("ISO-10303-21")
         assert app.Documents.Count == before
+
+
+class TestSelectAll:
+    def test_a_part_selects_every_feature_tree_entry(self, stack, new_part):
+        stack.sketch.create_sketch("Top")
+        stack.sketch.draw_rectangle(0, 0, 0.04, 0.02)
+        stack.sketch.close_sketch()
+        assert stack.feature.create_extrude(0.01).get("status") == "created"
+        doc = stack.doc.get_active_document()
+
+        r = stack.query.select_all()
+
+        assert r.get("status") == "selected", r
+        assert r["count"] == doc.DesignEdgebarFeatures.Count == doc.SelectSet.Count >= 4
+
+    def test_an_assembly_selects_every_occurrence(self, stack, saved_part, new_assembly):
+        for _ in range(2):
+            assert "error" not in stack.assembly.add_component(str(saved_part))
+        doc = stack.doc.get_active_document()
+
+        r = stack.query.select_all()
+
+        assert r == {"status": "selected", "count": 2, "selected": "occurrences"}, r
+        assert doc.SelectSet.Count == 2

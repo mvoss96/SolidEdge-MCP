@@ -231,7 +231,10 @@ class TestSelectRemove:
 
 
 class TestSelectAll:
-    """SelectSet.AddAll is a draft-sheet call; a part is refused before it (SE 2026)."""
+    """A draft uses SelectSet.AddAll; parts and assemblies add item by item.
+
+    AddAll answers E_FAIL in a part or assembly on Solid Edge 2026.
+    """
 
     def test_a_draft_selects_everything_on_the_sheet(self, query_mgr):
         qm, doc = query_mgr
@@ -243,13 +246,31 @@ class TestSelectAll:
         assert result == {"status": "selected", "count": 2}
         doc.SelectSet.AddAll.assert_called_once_with()
 
-    def test_a_part_is_refused_without_the_call(self, query_mgr):
+    def test_an_assembly_adds_every_occurrence(self, query_mgr):
         qm, doc = query_mgr
-        doc.Type = DocumentTypeConstants.igPartDocument
+        doc.Type = DocumentTypeConstants.igAssemblyDocument
+        occurrences = [MagicMock(), MagicMock()]
+        doc.Occurrences.Count = 2
+        doc.Occurrences.Item.side_effect = lambda i: occurrences[i - 1]
+        doc.SelectSet.Count = 2
 
         result = qm.select_all()
 
-        assert result["unsupported"] is True
+        assert result == {"status": "selected", "count": 2, "selected": "occurrences"}
+        assert [c.args[0] for c in doc.SelectSet.Add.call_args_list] == occurrences
+        doc.SelectSet.AddAll.assert_not_called()
+
+    def test_a_part_adds_every_feature_tree_entry(self, query_mgr):
+        qm, doc = query_mgr
+        doc.Type = DocumentTypeConstants.igPartDocument
+        doc.DesignEdgebarFeatures.Count = 4
+        doc.SelectSet.Count = 4
+
+        result = qm.select_all()
+
+        assert result["selected"] == "features"
+        assert doc.SelectSet.Add.call_count == 4
+        doc.DesignEdgebarFeatures.Item.assert_any_call(4)
         doc.SelectSet.AddAll.assert_not_called()
 
 

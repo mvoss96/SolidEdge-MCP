@@ -166,29 +166,39 @@ class SelectionMixin:
             return error_result(e)
 
     def select_all(self) -> dict[str, Any]:
-        """Select everything on the active draft sheet.
+        """Select everything in the active document.
 
-        ``SelectSet.AddAll`` is a 2D call: Siemens' reference shows it only on a
-        draft with an active sheet, and on Solid Edge 2026 it selects every
-        sheet entity there (two drawn, two selected) while a part with a body
-        answers E_FAIL whatever the selection holds. Parts are refused before
-        the call; use select_set(action='add', ...) there.
+        A draft uses ``SelectSet.AddAll``, which selects every entity on the
+        active sheet. In a part or an assembly AddAll answers E_FAIL on Solid
+        Edge 2026 (typed, late-bound and raw Invoke alike, and there is no 3D
+        "select all" command), so each item is added with ``SelectSet.Add``:
+        every occurrence of an assembly, every feature-tree entry
+        (``DesignEdgebarFeatures``) of a part or sheet-metal part.
         """
         try:
             doc = self.doc_manager.get_active_document()
-            if com_get(doc, "Type") != DocumentTypeConstants.igDraftDocument:
-                return {
-                    "error": (
-                        "SelectSet.AddAll selects 2D sheet entities and answers E_FAIL in a "
-                        "part or assembly on Solid Edge 2026. Open a draft, or add objects "
-                        "one at a time with select_set(action='add', object_type=..., "
-                        "index=...)."
-                    ),
-                    "unsupported": True,
-                }
+            doc_type = com_get(doc, "Type")
             select_set = doc.SelectSet
-            select_set.AddAll()
-            return {"status": "selected", "count": com_get(select_set, "Count")}
+            if doc_type == DocumentTypeConstants.igDraftDocument:
+                select_set.AddAll()
+                return {"status": "selected", "count": com_get(select_set, "Count")}
+            if doc_type in (
+                DocumentTypeConstants.igAssemblyDocument,
+                DocumentTypeConstants.igWeldmentAssemblyDocument,
+            ):
+                items, what = doc.Occurrences, "occurrences"
+            elif doc_type in (
+                DocumentTypeConstants.igPartDocument,
+                DocumentTypeConstants.igSheetMetalDocument,
+            ):
+                items, what = doc.DesignEdgebarFeatures, "features"
+            else:
+                return {
+                    "error": f"select_set(action='all') does not handle document type {doc_type}."
+                }
+            for i in range(1, items.Count + 1):
+                select_set.Add(items.Item(i))
+            return {"status": "selected", "count": com_get(select_set, "Count"), "selected": what}
         except Exception as e:
             return error_result(e)
 

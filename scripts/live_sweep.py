@@ -532,7 +532,7 @@ CASES: list[Case] = [
     Case("manage_material", {"action": "set_density", "density": 2700.0}, "box"),
     Case("manage_layer", {"action": "add", "name_or_index": "L1"}, "box"),
     Case("set_appearance", {"target": "body_color", "red": 200, "green": 30, "blue": 30}, "box"),
-    Case("select_set", {"action": "all"}, "box", "refuses on a part"),
+    Case("select_set", {"action": "all"}, "box", "every feature-tree entry of a part"),
     Case("select_set", {"action": "all"}, "draft_line"),
     Case("recompute", {"scope": "model"}, "box"),
     Case("manage_feature_tree", {"action": "rename", "feature_name": F, "new_name": "B"}, "box"),

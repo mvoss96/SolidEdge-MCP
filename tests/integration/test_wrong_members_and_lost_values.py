@@ -120,7 +120,7 @@ class TestSweptSurface:
 
 
 class TestSelectAll:
-    def test_a_draft_sheet_selects_everything_and_a_part_refuses(self, stack, new_draft):
+    def test_a_draft_sheet_selects_everything(self, stack, new_draft):
         sheet = stack.doc.get_active_document().ActiveSheet
         sheet.Lines2d.AddBy2Points(0.05, 0.05, 0.15, 0.05)
         sheet.Circles2d.AddByCenterRadius(0.1, 0.1, 0.02)
