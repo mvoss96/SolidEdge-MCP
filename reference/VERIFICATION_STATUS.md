@@ -26,7 +26,7 @@ So this document tracks the other question: **does it actually do what it says?*
 |---|---|---|
 | Tools | 119 | the MCP action surface |
 | Resources | 53 + 2 guides | read-only `solidedge://` endpoints |
-| Unit tests | 3,013 (12 skip) | mocked COM; catch shape, not truth |
+| Unit tests | 3,015 (12 skip) | mocked COM; catch shape, not truth |
 | Integration tests | 80 | drive real Solid Edge; 19 pin exact values against a known box, 7 pin the wrong-member and lost-value fixes, 11 pin the synchronous flange, the split, the thicken, the slot, the bead, the lofted flange and the mirror only the volume can see, 5 pin 3D sketch lines, structural frames along them (both methods) and planar relations through References, and there are assembly, draft and sheet-metal fixtures |
 | Structural audits | 7 | all at zero but one documented finding |
 

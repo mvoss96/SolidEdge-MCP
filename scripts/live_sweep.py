@@ -238,6 +238,15 @@ CONTEXTS: dict[str, list[Step]] = {
     "asm_lines": _asm(1)
     + [("draw_3d_line", {"x1": 0.0, "y1": 0.0, "z1": 0.0, "x2": 0.3, "y2": 0.0, "z2": 0.0})],
     "asm2": _asm(2),
+    # two boxes overlapping by half their length, for the interference check
+    "asm_overlap": _asm(1)
+    + [
+        (
+            "add_assembly_component",
+            {"method": "basic", "file_path": str(BOX), "x": 0.04, "y": 0, "z": 0},
+        )
+    ],
+    "box_file": [("open_document", {"method": "foreground", "file_path": str(BOX)})],
     "asm_circle_closed": _asm(1) + _circle_closed(),
     "draft": _draft(),
     "draft_origin": _draft() + [("draft_config", {"action": "set_origin", "x": 0.1, "y": 0.2})],
@@ -397,6 +406,33 @@ CASES: list[Case] = [
         "box",
     ),
     Case(
+        "create_pattern",
+        {
+            "method": "circular_ex",
+            "feature_name": F,
+            "count": 4,
+            "plane_index": 1,
+            "axis_x": 0.04,
+            "axis_y": 0.024,
+        },
+        "box",
+        "full circle about the box centre",
+    ),
+    Case(
+        "create_pattern",
+        {
+            "method": "circular_ex",
+            "feature_name": F,
+            "count": 3,
+            "angle": 90.0,
+            "plane_index": 1,
+            "axis_x": 0.04,
+            "axis_y": 0.024,
+        },
+        "box",
+        "partial arc",
+    ),
+    Case(
         "create_thread",
         {"method": "basic", "face_index": 0, "thread_diameter": 0.006, "thread_depth": 0.01},
         "cylinder",
@@ -415,6 +451,8 @@ CASES: list[Case] = [
         "box",
     ),
     Case("manage_feature", {"action": "rename", "index": 0, "new_name": "Base"}, "box"),
+    Case("manage_feature", {"action": "delete", "feature_name": "Round_1"}, "box_round", "by name"),
+    Case("manage_feature", {"action": "delete"}, "box", "no target is refused"),
     Case("simplify", {"method": "auto"}, "box"),
     Case("edit_feature_extent", {"property": "get_direction1", "feature_name": F}, "box"),
     # sheet metal
@@ -549,6 +587,14 @@ CASES: list[Case] = [
         "asm",
     ),
     Case("manage_component", {"action": "ground", "component_index": 0, "ground": True}, "asm"),
+    Case("manage_component", {"action": "ground", "component_index": 1, "ground": False}, "asm2"),
+    Case("query_component", {"property": "interference"}, "asm_overlap", "half overlap"),
+    Case(
+        "save_document",
+        {"method": "save", "file_path": str(BOX), "overwrite": True},
+        "box_file",
+        "the document's own file",
+    ),
     Case("manage_relation", {"action": "list"}, "asm"),
     Case(
         "add_assembly_relation",
