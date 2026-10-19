@@ -879,17 +879,20 @@ class SurfacesMixin:
         Returns:
             Dict with status and surface info
         """
-        # Constructions.BlueSurfs.Add answers E_INVALIDARG whatever it is
-        # given for Origins -- the SAFEARRAY(VT_DISPATCH) it declares, filled
-        # with the sections' circles, with the profiles themselves, or with
-        # None -- from two profiles that Models.AddLoftedProtrusion lofts
-        # (Solid Edge 2026). Say so rather than raise it.
+        # BlueSurfs.Add builds only from profiles in the document's Sketches
+        # collection; the ProfileSets profiles this server sketches into answer
+        # E_INVALIDARG (typed call and raw Invoke with by-reference
+        # SAFEARRAY(VT_DISPATCH) alike). From Sketches it builds two circles
+        # (igNatural tangents, no guides), and answers E_FAIL for rectangles,
+        # with or without keypoint relations and line origins (Solid Edge 2026).
         all_profiles = self.sketch_manager.get_accumulated_profiles()
         return {
             "error": (
-                "BlueSurfs.Add rejects every argument form tried on Solid Edge 2026 "
-                "(E_INVALIDARG). Use create_loft for a solid, or the Solid Edge UI "
-                "for a bounded surface."
+                "BlueSurfs.Add accepts only profiles from the document's Sketches "
+                "collection; the sketches this server makes answer E_INVALIDARG "
+                "(Solid Edge 2026), and from Sketches it builds only single-curve "
+                "sections such as circles. For a surface through sections use "
+                "create_lofted_surface; for a solid, create_loft."
             ),
             "unsupported": True,
             "num_profiles": len(all_profiles),

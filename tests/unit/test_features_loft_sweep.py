@@ -129,7 +129,7 @@ class TestCreateLoftWithGuides:
 
 
 class TestCreateBoundedSurface:
-    """BlueSurfs.Add answered E_INVALIDARG to every origin form on SE 2026."""
+    """BlueSurfs.Add rejects ProfileSets profiles (E_INVALIDARG, SE 2026)."""
 
     def test_refuses_with_the_evidence(self, feature_mgr, managers):
         _, sketch_mgr, doc, _, _, _ = managers
@@ -141,6 +141,7 @@ class TestCreateBoundedSurface:
 
         assert result["unsupported"] is True
         assert "E_INVALIDARG" in result["error"]
+        assert "create_lofted_surface" in result["error"]
         assert result["num_profiles"] == 2
         assert result["want_end_caps"] is True
         assert result["periodic"] is True
