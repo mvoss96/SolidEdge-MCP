@@ -298,3 +298,24 @@ class TestSlotsAgainstThePlaneNormal:
 
         assert r.get("status") == "created", r
         assert before - _volume(stack) == pytest.approx(0.004 * 0.02 * 0.005, rel=1e-3)
+
+
+class TestFillPattern:
+    @pytest.mark.parametrize("method", ["create_pattern_by_fill", "create_pattern_by_fill_ex"])
+    def test_a_hole_fills_a_sketched_region(self, stack, new_part, method):
+        _box(stack, height=0.01)
+        _sketch_on_top(stack, 0.01)
+        stack.sketch.draw_circle(0.005, 0.005, 0.0015)
+        stack.sketch.close_sketch()
+        assert stack.feature.create_extruded_cutout(0.005, "Reverse").get("status") == "created"
+        features = stack.doc.get_active_document().DesignEdgebarFeatures
+        hole = features.Item(features.Count).Name
+        one = _volume(stack)
+        _sketch_on_top(stack, 0.01)
+        stack.sketch.draw_rectangle(0.002, 0.002, 0.078, 0.046)
+        stack.sketch.close_sketch()
+
+        r = getattr(stack.feature, method)(hole, 0.01, 0.01)
+
+        assert r.get("status") == "created", r
+        assert _volume(stack) < one - 3.14159 * 0.0015**2 * 0.005 * 5

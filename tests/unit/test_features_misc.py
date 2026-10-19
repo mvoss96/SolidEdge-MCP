@@ -1655,16 +1655,24 @@ class TestCreatePatternDuplicate:
 
 
 class TestCreatePatternByFill:
-    """AddByFill needs region profiles, not a body face."""
+    """AddByFill fills the closed active sketch with copies of the feature."""
 
-    def test_unsupported(self, feature_mgr, managers):
+    def test_fills_the_active_sketch(self, feature_mgr, managers):
+        _, sketch_mgr, doc, _, model, profile = managers
+        feat = _setup_feature_lookup(doc, "Hole1")
+
+        result = feature_mgr.create_pattern_by_fill("Hole1", 0.008, 0.01)
+
+        assert result["status"] == "created", result
+        model.Patterns.AddByFill.assert_called_once_with(
+            1, [feat], 1, [profile], 1, 0.008, 0.01, 0.0, 0.0, False, 0.0, 0.0
+        )
+        sketch_mgr.clear_accumulated_profiles.assert_called_once()
+
+    def test_spacing_must_be_positive(self, feature_mgr, managers):
         _, _, doc, _, model, _ = managers
         _setup_feature_lookup(doc, "Hole1")
-
-        result = feature_mgr.create_pattern_by_fill("Hole1", 0, 0.01, 0.01)
-        assert result["unsupported"] is True
-        assert result["fill_region_face_index"] == 0
-        assert "region profiles" in result["error"]
+        assert "positive" in feature_mgr.create_pattern_by_fill("Hole1", 0.0, 0.01)["error"]
         model.Patterns.AddByFill.assert_not_called()
 
 
@@ -1712,17 +1720,18 @@ class TestCreatePatternByTableSync:
 
 
 class TestCreatePatternByFillEx:
-    """AddByFillEx needs region profiles, not a body face."""
+    """AddByFillEx takes the AddByFill arguments plus three more."""
 
-    def test_unsupported(self, feature_mgr, managers):
-        _, _, doc, _, model, _ = managers
-        _setup_feature_lookup(doc, "Hole1")
+    def test_fills_the_active_sketch(self, feature_mgr, managers):
+        _, _, doc, _, model, profile = managers
+        feat = _setup_feature_lookup(doc, "Hole1")
 
-        result = feature_mgr.create_pattern_by_fill_ex("Hole1", 0, 0.01, 0.01)
-        assert result["unsupported"] is True
-        assert result["stagger_offset"] == 0.0
-        assert "region profiles" in result["error"]
-        model.Patterns.AddByFillEx.assert_not_called()
+        result = feature_mgr.create_pattern_by_fill_ex("Hole1", 0.01, 0.01)
+
+        assert result["type"] == "pattern_by_fill_ex", result
+        model.Patterns.AddByFillEx.assert_called_once_with(
+            1, [feat], 1, [profile], 1, 0.01, 0.01, 0.0, 0.0, False, 0.0, 0.0, False, False, 0
+        )
 
 
 # ============================================================================

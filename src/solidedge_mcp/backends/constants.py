@@ -652,6 +652,14 @@ class AssemblyFeaturePropertyConstants:
     igAssemblyFeaturePattern = 7
 
 
+class FillPatternMethodConstants:
+    """constant.tlb > FillPatternMethodConstants."""
+
+    seRectangularFillMethod = 1
+    seStaggerPolarFillMethod = 2
+    seStaggerLinearOffsetFillMethod = 3
+
+
 class PatternTypeConstants:
     """constant.tlb > PatternTypeConstants."""
 

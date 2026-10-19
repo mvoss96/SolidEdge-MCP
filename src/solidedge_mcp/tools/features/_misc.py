@@ -58,7 +58,6 @@ def create_pattern(
     axis_x: float = 0.0,
     axis_y: float = 0.0,
     axis_z: float = 0.0,
-    fill_region_face_index: int = 0,
     x_offsets: list[float] | None = None,
     y_offsets: list[float] | None = None,
     curve_edge_index: int = 0,
@@ -73,10 +72,11 @@ def create_pattern(
     and rectangle_angle (degrees, grid rotation). circular_ex: count instances
     (original included, >= 2) spread over angle (degrees, default 360) around
     an axis through (axis_x, axis_y, axis_z) (meters), normal to plane_index.
-    user_defined: feature_name alone. Every other method is unsupported -
-    duplicate, by_fill, by_fill_ex, by_table, by_table_sync and by_curve_ex
-    need keypoints, region profiles or Excel tables that cannot be built here.
-    Pattern those in the Solid Edge UI.
+    by_fill / by_fill_ex: fill the closed active sketch (the region, drawn
+    and closed after the feature) on an x_spacing by y_spacing grid.
+    user_defined: feature_name alone. duplicate, by_table, by_table_sync and
+    by_curve_ex are unsupported (instance references, Excel tables, curve
+    anchors); use rectangular_ex, circular_ex or by_fill.
     """
     err = validate_numerics(
         x_spacing=x_spacing,
@@ -115,10 +115,7 @@ def create_pattern(
             return feature_manager.create_pattern_duplicate(feature_name=feature_name)
         case "by_fill":
             return feature_manager.create_pattern_by_fill(
-                feature_name=feature_name,
-                fill_region_face_index=fill_region_face_index,
-                x_spacing=x_spacing,
-                y_spacing=y_spacing,
+                feature_name=feature_name, x_spacing=x_spacing, y_spacing=y_spacing
             )
         case "by_table":
             return feature_manager.create_pattern_by_table(
@@ -130,10 +127,7 @@ def create_pattern(
             )
         case "by_fill_ex":
             return feature_manager.create_pattern_by_fill_ex(
-                feature_name=feature_name,
-                fill_region_face_index=fill_region_face_index,
-                x_spacing=x_spacing,
-                y_spacing=y_spacing,
+                feature_name=feature_name, x_spacing=x_spacing, y_spacing=y_spacing
             )
         case "by_curve_ex":
             return feature_manager.create_pattern_by_curve_ex(

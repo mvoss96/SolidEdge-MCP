@@ -12,6 +12,7 @@ from ..constants import (
     DocumentTypeConstants,
     FaceQueryConstants,
     FaceRotateConstants,
+    FillPatternMethodConstants,
     ModelingModeConstants,
     PatternOffsetTypeConstants,
     PatternTypeConstants,
@@ -1138,43 +1139,70 @@ class MiscFeaturesMixin:
 
     @verifies_geometry
     def create_pattern_by_fill(
-        self,
-        feature_name: str,
-        fill_region_face_index: int,
-        x_spacing: float,
-        y_spacing: float,
+        self, feature_name: str, x_spacing: float, y_spacing: float
     ) -> dict[str, Any]:
         """
-        Create a fill pattern of a feature within a region.
+        Fill the closed active sketch with copies of a feature on a rectangular grid.
 
-        NOT AVAILABLE via COM automation. Patterns.AddByFill takes twelve
-        arguments and its region is a RegionProfileArray - closed sketch region
-        profiles - not the body face this tool is given. The call is never made.
+        Patterns.AddByFill(1, [feature], 1, [region profile],
+        seRectangularFillMethod, x_spacing, y_spacing, 0, 0, False, 0, 0) builds
+        it from a closed profile (Solid Edge 2026).
 
         Args:
             feature_name: Name of the feature to pattern
-            fill_region_face_index: 0-based face index defining the fill region
             x_spacing: Spacing in X direction (meters)
             y_spacing: Spacing in Y direction (meters)
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and pattern info
         """
-        return {
-            "error": (
-                "Fill patterns are not available through this server: "
-                "Patterns.AddByFill needs an array of region profiles (closed "
-                "sketch regions), not a body face index. Use "
-                "create_pattern(method='rectangular_ex') or fill-pattern the "
-                "feature in the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "pattern_by_fill",
-            "feature": feature_name,
-            "fill_region_face_index": fill_region_face_index,
-            "x_spacing": x_spacing,
-            "y_spacing": y_spacing,
-        }
+        return self._fill_pattern(feature_name, x_spacing, y_spacing, extended=False)
+
+    def _fill_pattern(
+        self, feature_name: str, x_spacing: float, y_spacing: float, extended: bool
+    ) -> dict[str, Any]:
+        """Patterns.AddByFill / AddByFillEx with the active closed sketch as region."""
+        if x_spacing <= 0 or y_spacing <= 0:
+            return {"error": "x_spacing and y_spacing must be positive."}
+        try:
+            doc = self.doc_manager.get_active_document()
+            if doc.Models.Count == 0:
+                return {"error": "No base feature exists."}
+            region = self.sketch_manager.get_active_sketch()
+            if region is None:
+                return {"error": "Draw and close a sketch holding the fill region first."}
+            feature, error = self._find_feature_by_name(feature_name)
+            if error:
+                return error
+            args = [
+                1,
+                [feature],
+                1,
+                [region],
+                FillPatternMethodConstants.seRectangularFillMethod,
+                x_spacing,
+                y_spacing,
+                0.0,
+                0.0,
+                False,
+                0.0,
+                0.0,
+            ]
+            patterns = doc.Models.Item(1).Patterns
+            if extended:
+                patterns.AddByFillEx(*args, False, False, PatternTypeConstants.seSmartPattern)
+            else:
+                patterns.AddByFill(*args)
+            self.sketch_manager.clear_accumulated_profiles()
+            return {
+                "status": "created",
+                "type": "pattern_by_fill_ex" if extended else "pattern_by_fill",
+                "feature": feature_name,
+                "x_spacing": x_spacing,
+                "y_spacing": y_spacing,
+            }
+        except Exception as e:
+            return error_result(e)
 
     @verifies_geometry
     def create_pattern_by_table(
@@ -1254,46 +1282,24 @@ class MiscFeaturesMixin:
 
     @verifies_geometry
     def create_pattern_by_fill_ex(
-        self,
-        feature_name: str,
-        fill_region_face_index: int,
-        x_spacing: float,
-        y_spacing: float,
-        stagger_offset: float = 0.0,
+        self, feature_name: str, x_spacing: float, y_spacing: float
     ) -> dict[str, Any]:
         """
-        Create an extended fill pattern of a feature within a region.
+        Fill the closed active sketch with copies of a feature, via Patterns.AddByFillEx.
 
-        NOT AVAILABLE via COM automation. Patterns.AddByFillEx takes fifteen
-        arguments and its region is a RegionProfileArray - closed sketch region
-        profiles - not the body face this tool is given. The call is never made.
+        Same region and grid as create_pattern_by_fill; the three extra
+        arguments are UseOccurrenceFootprint=False, AllowBoundaryTouching=False
+        and seSmartPattern.
 
         Args:
             feature_name: Name of the feature to pattern
-            fill_region_face_index: 0-based face index defining the fill region
             x_spacing: X direction spacing in meters
             y_spacing: Y direction spacing in meters
-            stagger_offset: Stagger offset for pattern rows in meters
 
         Returns:
-            Dict with an unsupported error
+            Dict with status and pattern info
         """
-        return {
-            "error": (
-                "Fill patterns are not available through this server: "
-                "Patterns.AddByFillEx needs an array of region profiles (closed "
-                "sketch regions), not a body face index. Use "
-                "create_pattern(method='rectangular_ex') or fill-pattern the "
-                "feature in the Solid Edge UI."
-            ),
-            "unsupported": True,
-            "type": "pattern_by_fill_ex",
-            "feature": feature_name,
-            "fill_region_face_index": fill_region_face_index,
-            "x_spacing": x_spacing,
-            "y_spacing": y_spacing,
-            "stagger_offset": stagger_offset,
-        }
+        return self._fill_pattern(feature_name, x_spacing, y_spacing, extended=True)
 
     @verifies_geometry
     def create_pattern_by_curve_ex(
