@@ -85,6 +85,7 @@ class VariablesMixin:
         type library marks read-only. The caller now acts outside the loop,
         where a failure surfaces as itself.
         """
+
         # Variables.Item(name) resolves a display name directly, and it is
         # the only route to a dimension: enumerated by index, a dimension is
         # a nameless entry (Solid Edge 2026, where Item(i) shows
@@ -92,14 +93,22 @@ class VariablesMixin:
         # Item("RevolvedProtrusion_1_FiniteAngle") returns it). The answer is
         # checked against both names because a mock, or a lenient lookup,
         # can hand back something else.
+        # Variables.GetName adds the language-independent system name
+        # (PhysicalProperties_Density) next to the localized DisplayName.
+        def names(var: Any) -> tuple[Any, ...]:
+            system = None
+            with contextlib.suppress(Exception):
+                system = variables.GetName(var)
+            return (com_get(var, "DisplayName"), com_get(var, "Name"), system)
+
         with contextlib.suppress(Exception):
             var = variables.Item(name)
-            if name in (com_get(var, "DisplayName"), com_get(var, "Name")):
+            if name in names(var):
                 return var
         for i in range(1, com_get(variables, "Count", 0) + 1):
             with contextlib.suppress(Exception):
                 var = variables.Item(i)
-                if name in (com_get(var, "DisplayName", ""), com_get(var, "Name", "")):
+                if name in names(var):
                     return var
         return None
 
@@ -314,11 +323,25 @@ class VariablesMixin:
                 for i in range(1, com_get(results, "Count", 0) + 1):
                     with contextlib.suppress(Exception):
                         var = results.Item(i)
-                        name = com_get(var, "DisplayName", "") or com_get(var, "Name", f"var_{i}")
+                        # Variables.GetName gives the user name, else the system name
+                        # (PhysicalProperties_Density, RevolvedProtrusion_1_FiniteAngle),
+                        # which does not depend on the UI language. DisplayName is the
+                        # localized label (Eigenschaft_Dichte in a German UI).
+                        display = com_get(var, "DisplayName", "") or ""
+                        try:
+                            system = variables.GetName(var)
+                        except Exception:  # noqa: BLE001
+                            system = None
+                        if isinstance(system, str) and system:
+                            name = system
+                        else:
+                            name = display or com_get(var, "Name", f"var_{i}")
                         if name in seen:
                             continue
                         seen.add(name)
                         entry: dict[str, Any] = {"name": name}
+                        if display and display != name:
+                            entry["display_name"] = display
                         with contextlib.suppress(Exception):
                             entry["value"] = var.Value
                             entry.update(_units_of(var))

@@ -76,6 +76,20 @@ class TestGetVariables:
             assert call.args[1] == 2
         doc.Variables.Item.assert_not_called()
 
+    def test_names_do_not_depend_on_the_ui_language(self, query_mgr):
+        qm, doc = query_mgr
+        var = MagicMock()
+        var.DisplayName = "Eigenschaft_Dichte"  # German UI
+        var.Value = 7850.0
+        var.UnitsType = 1
+        _query_returns(doc, var)
+        doc.Variables.GetName.return_value = "PhysicalProperties_Density"
+
+        result = qm.get_variables()
+
+        assert result["variables"][0]["name"] == "PhysicalProperties_Density"
+        assert result["variables"][0]["display_name"] == "Eigenschaft_Dichte"
+
     def test_empty(self, query_mgr):
         qm, doc = query_mgr
         _query_returns(doc)
