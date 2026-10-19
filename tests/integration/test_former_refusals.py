@@ -76,3 +76,57 @@ class TestFiniteNormalCutout:
         assert r.get("status") == "created", r
         removed = before - _volume(stack)
         assert removed == pytest.approx(3.141592653589793 * 0.004**2 * 0.01, rel=1e-3)
+
+
+def _tab_and_edge(stack):
+    """An ordered 80 x 48 mm base tab and a (face, edge) pair on a long edge of its top or
+    bottom face. AddFlangeByFace takes that face as its reference; a thin side face
+    answers E_POINTER."""
+    from tests.integration.test_synchronous_flange_split_thicken import _tab
+
+    _tab(stack)
+    faces = stack.doc.get_active_document().Models.Item(1).Body.Faces(1)
+    for fi in range(1, faces.Count + 1):
+        face = faces.Item(fi)
+        if face.Area < 0.003:
+            continue
+        edges = face.Edges
+        for ei in range(1, edges.Count + 1):
+            sp = edges.Item(ei).StartVertex.GetPointData([0.0] * 3)
+            ep = edges.Item(ei).EndVertex.GetPointData([0.0] * 3)
+            if abs(sp[0] - ep[0]) > 0.05:  # runs along X, 80 mm
+                return fi - 1, ei - 1
+    raise AssertionError("no long edge on a sheet face")
+
+
+class TestOrderedFlanges:
+    @pytest.mark.parametrize(
+        "method, extra",
+        [
+            ("create_flange", {"inside_radius": 0.003, "bend_angle": 45.0}),
+            ("create_flange_by_match_face", {}),
+            ("create_flange_with_bend_calc", {"bend_deduction": 0.0005}),
+            ("create_flange_match_face_with_bend", {}),
+            ("create_flange_by_face", {"ref_face_index": None}),
+            ("create_flange_by_face_with_bend", {"ref_face_index": None}),
+        ],
+    )
+    def test_an_ordered_tab_gets_a_solved_flange(self, stack, new_sheet_metal, method, extra):
+        fi, ei = _tab_and_edge(stack)
+        doc = stack.doc.get_active_document()
+        assert doc.ModelingMode == 2  # ordered
+        before = doc.Models.Item(1).Body.Volume
+        if "ref_face_index" in extra:
+            extra = {**extra, "ref_face_index": fi}
+
+        r = getattr(stack.feature, method)(fi, ei, flange_length=0.02, **extra)
+
+        assert r.get("status") == "created", r
+        flange = doc.Models.Item(1).Flanges.Item(1)
+        assert flange.Status[0] == 1216476310  # igFeatureOK
+        assert doc.Models.Item(1).Body.Volume > before
+        if method == "create_flange":
+            assert flange.BendRadius == pytest.approx(0.003)
+            assert flange.BendAngle == pytest.approx(0.7853981633974483)
+        if method == "create_flange_with_bend_calc":
+            assert flange.GetBendCalculationMethodAndValue() == (1, pytest.approx(0.0005))

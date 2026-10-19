@@ -551,34 +551,47 @@ class SheetMetalMixin:
         except Exception as e:
             return error_result(e)
 
-    @staticmethod
-    def _flanges_unsupported(method: str, **echo: Any) -> dict[str, Any]:
-        """The refusal every flange creator returns, with the evidence.
+    #: FlangeSide values of the ordered Flanges.Add* calls.
+    _FLANGE_SIDES = {
+        "Left": DirectionConstants.igLeft,
+        "Right": DirectionConstants.igRight,
+        "Both": DirectionConstants.igBoth,
+    }
 
-        Verified on Solid Edge 2026 against a base tab, on every horizontal
-        edge, each on a fresh document: Flanges.Add, AddByMatchFace and
-        AddByBendDeductionOrBendAllowance record a Flange feature (a name, a
-        90-degree bend angle, a bend radius) that never solves -- the body's
-        range, volume and face count are unchanged after Recompute,
-        Flange.Status raises, and the UI draws only its outline. The optional
-        parameters (ThicknessSide, InsideRadius, DimSide, BendAngle, and every
-        FeaturePropertyConstants *Side* value) change the recorded feature and
-        nothing else. AddSync and AddSyncByBendDeductionOrBendAllowance raise
-        0x80004021 in an ordered document, and AddFlangeByFace raises
-        E_POINTER. Refusing here leaves no dead feature behind.
+    def _ordered_flange(
+        self, kind: str, face_index: int, edge_index: int, build: Any, **echo: Any
+    ) -> dict[str, Any]:
+        """Run one ordered Flanges.Add* call and make the flange solve.
+
+        build(flanges, edge, model) makes the call. Every ordered Flanges.Add*
+        records OffsetType = 0 when no OffsetType is passed (the MatchFace
+        calls have no such parameter), and such a flange never solves: no
+        geometry after Recompute, Flange.Status raises. A flange made in the
+        UI carries OffsetType = igNone (44); set to that, it builds (Solid
+        Edge 2026, 6 -> 10 faces on every edge of a base tab).
         """
-        return {
-            "error": (
-                f"{method}: the ordered Flanges.Add* calls record a flange that Solid "
-                "Edge 2026 never solves (no geometry after Recompute), or raise. "
-                "Flanges do build in a synchronous document: run "
-                "manage_feature_tree(action='set_mode', mode='synchronous') before "
-                "the base tab, then create_flange(method='sync')."
-            ),
-            "unsupported": True,
-            "method": method,
-            **echo,
-        }
+        try:
+            doc = self.doc_manager.get_active_document()
+            located = self._flange_edge(doc, face_index, edge_index)
+            if isinstance(located, dict):
+                return located
+            model, edge = located
+            flange = build(model.Flanges, edge, model)
+            flange.OffsetType = OffsetSideConstants.seOffsetNone
+            model.Recompute()
+            return {
+                "status": "created",
+                "type": kind,
+                "name": com_get(flange, "Name"),
+                "face_index": face_index,
+                "edge_index": edge_index,
+                **echo,
+            }
+        except Exception as e:
+            return error_result(e)
+
+    def _flange_side(self, side: str) -> int:
+        return self._FLANGE_SIDES.get(side, DirectionConstants.igRight)
 
     @verifies_geometry
     def create_flange(
@@ -607,9 +620,6 @@ class SheetMetalMixin:
         Returns:
             Dict with status and flange info
         """
-        # The ordered Flanges.Add never solves (see _flanges_unsupported), but
-        # Flanges.AddSync does in a synchronous document, so a caller who only
-        # knows "make a flange" gets the working call when the document allows.
         doc = self.doc_manager.get_active_document()
         if self._require_synchronous_sheet(doc) is None:
             return self.create_flange_sync(
@@ -619,10 +629,25 @@ class SheetMetalMixin:
                 inside_radius=inside_radius if inside_radius is not None else 0.001,
                 bend_angle=bend_angle,
             )
-        return self._flanges_unsupported(
-            "create_flange",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+        radius = inside_radius if inside_radius is not None else skip
+        angle = math.radians(bend_angle) if bend_angle is not None else skip
+        # Add(pLocatedEdge, FlangeSide, FlangeLength, ThicknessSide, InsideRadius,
+        #   DimSide, BRType, BRWidth, BRLength, CRType, NeutralFactor, BnParamType,
+        #   BendAngle, ...). BendAngle is in radians.
+        return self._ordered_flange(
+            "flange",
+            face_index,
+            edge_index,
+            lambda flanges, edge, _model: flanges.Add(
+                edge,
+                self._flange_side(side),
+                flange_length,
+                skip,
+                radius,
+                *([skip] * 7),
+                angle,
+            ),
             flange_length=flange_length,
             side=side,
             inside_radius=inside_radius,
@@ -1288,10 +1313,16 @@ class SheetMetalMixin:
         Returns:
             Dict with status and flange info
         """
-        return self._flanges_unsupported(
-            "create_flange_by_match_face",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+        # AddByMatchFace(pLocatedEdge, FlangeSide, FlangeLength, ThicknessSide,
+        #   InsideRadius, ...). No match face is given.
+        return self._ordered_flange(
+            "flange_by_match_face",
+            face_index,
+            edge_index,
+            lambda flanges, edge, _model: flanges.AddByMatchFace(
+                edge, self._flange_side(side), flange_length, skip, inside_radius
+            ),
             flange_length=flange_length,
             side=side,
             inside_radius=inside_radius,
@@ -1431,10 +1462,27 @@ class SheetMetalMixin:
         Returns:
             Dict with status and flange info
         """
-        return self._flanges_unsupported(
-            "create_flange_by_face",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+
+        def build(flanges: Any, edge: Any, model: Any) -> Any:
+            faces = model.Body.Faces(FaceQueryConstants.igQueryAll)
+            if ref_face_index < 0 or ref_face_index >= faces.Count:
+                raise ValueError(
+                    f"Invalid ref_face_index: {ref_face_index}. Body has {faces.Count} faces."
+                )
+            ref_face = faces.Item(ref_face_index + 1)
+            # AddFlangeByFace(pLocatedEdge, pRefFace, FlangeSide, FlangeLength,
+            #   ThicknessSide, InsideRadius, ...). The reference is the face that
+            #   holds the edge; other faces answer E_INVALIDARG or E_POINTER.
+            return flanges.AddFlangeByFace(
+                edge, ref_face, self._flange_side(side), flange_length, skip, bend_radius
+            )
+
+        return self._ordered_flange(
+            "flange_by_face",
+            face_index,
+            edge_index,
+            build,
             ref_face_index=ref_face_index,
             flange_length=flange_length,
             side=side,
@@ -1471,10 +1519,31 @@ class SheetMetalMixin:
             return self.create_flange_sync_with_bend_calc(
                 face_index, edge_index, flange_length, bend_deduction=bend_deduction
             )
-        return self._flanges_unsupported(
-            "create_flange_with_bend_calc",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+        empty = VARIANT(pythoncom.VT_EMPTY, None)
+        # AddByBendDeductionOrBendAllowance(pLocatedEdge, FlangeSide, FlangeLength,
+        #   vtKeyPointOrTangentFace, vtKeyPointFlags, 14 optional slots ending in
+        #   ExtendedBendRelief, BendCalculationMethod, BendCalculationMethodValue).
+        #   The keypoint slots take VT_EMPTY. A deduction reads back from
+        #   GetBendCalculationMethodAndValue as (1, value).
+        calc = (
+            [BendCalculationMethodConstants.BendCalculationMethodBendDeduction, bend_deduction]
+            if bend_deduction
+            else []
+        )
+        return self._ordered_flange(
+            "flange_with_bend_calc",
+            face_index,
+            edge_index,
+            lambda flanges, edge, _model: flanges.AddByBendDeductionOrBendAllowance(
+                edge,
+                self._flange_side(side),
+                flange_length,
+                empty,
+                empty,
+                *([skip] * 14 if calc else []),
+                *calc,
+            ),
             flange_length=flange_length,
             side=side,
             bend_deduction=bend_deduction,
@@ -2316,10 +2385,18 @@ class SheetMetalMixin:
         Returns:
             Dict with status and flange info
         """
-        return self._flanges_unsupported(
-            "create_flange_match_face_with_bend",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+        empty = VARIANT(pythoncom.VT_EMPTY, None)
+        # AddByMatchFaceAndBendDeductionOrBendAllowance(pLocatedEdge, FlangeSide,
+        #   FlangeLength, vtKeyPointOrTangentFace, vtKeyPointFlags, ThicknessSide,
+        #   InsideRadius, ...). The keypoint slots take VT_EMPTY.
+        return self._ordered_flange(
+            "flange_match_face_with_bend",
+            face_index,
+            edge_index,
+            lambda flanges, edge, _model: flanges.AddByMatchFaceAndBendDeductionOrBendAllowance(
+                edge, self._flange_side(side), flange_length, empty, empty, skip, inside_radius
+            ),
             flange_length=flange_length,
             side=side,
             inside_radius=inside_radius,
@@ -2349,10 +2426,36 @@ class SheetMetalMixin:
         Returns:
             Dict with status and flange info
         """
-        return self._flanges_unsupported(
-            "create_flange_by_face_with_bend",
-            face_index=face_index,
-            edge_index=edge_index,
+        skip = pythoncom.ArgNotFound
+        empty = VARIANT(pythoncom.VT_EMPTY, None)
+
+        def build(flanges: Any, edge: Any, model: Any) -> Any:
+            faces = model.Body.Faces(FaceQueryConstants.igQueryAll)
+            if ref_face_index < 0 or ref_face_index >= faces.Count:
+                raise ValueError(
+                    f"Invalid ref_face_index: {ref_face_index}. Body has {faces.Count} faces."
+                )
+            ref_face = faces.Item(ref_face_index + 1)
+            # AddFlangeByFaceAndBendDeductionOrBendAllowance(pLocatedEdge, pRefFace,
+            #   FlangeSide, FlangeLength, vtKeyPointOrTangentFace, vtKeyPointFlags,
+            #   ThicknessSide, InsideRadius, ...). The keypoint slots take VT_EMPTY;
+            #   None for the face answers E_POINTER.
+            return flanges.AddFlangeByFaceAndBendDeductionOrBendAllowance(
+                edge,
+                ref_face,
+                self._flange_side(side),
+                flange_length,
+                empty,
+                empty,
+                skip,
+                bend_radius,
+            )
+
+        return self._ordered_flange(
+            "flange_by_face_with_bend",
+            face_index,
+            edge_index,
+            build,
             ref_face_index=ref_face_index,
             flange_length=flange_length,
             side=side,

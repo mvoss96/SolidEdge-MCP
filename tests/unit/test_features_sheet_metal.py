@@ -768,28 +768,86 @@ def _dummy_arguments(fn):
     return values
 
 
-class TestFlangeCreatorsRefuse:
-    @pytest.mark.parametrize("method", FLANGE_CREATORS)
-    def test_refuses_without_touching_com(self, feature_mgr, managers, method):
-        _, sketch_mgr, doc, _, model, _ = managers
+class TestOrderedFlanges:
+    """Ordered Flanges.Add* calls, each followed by OffsetType = igNone.
+
+    Without it the call records OffsetType 0 and the flange never solves
+    (Solid Edge 2026); a UI-made flange carries igNone (44).
+    """
+
+    @pytest.mark.parametrize(
+        "method, com_call",
+        [
+            ("create_flange", "Add"),
+            ("create_flange_by_match_face", "AddByMatchFace"),
+            ("create_flange_by_face", "AddFlangeByFace"),
+            ("create_flange_with_bend_calc", "AddByBendDeductionOrBendAllowance"),
+            (
+                "create_flange_match_face_with_bend",
+                "AddByMatchFaceAndBendDeductionOrBendAllowance",
+            ),
+            (
+                "create_flange_by_face_with_bend",
+                "AddFlangeByFaceAndBendDeductionOrBendAllowance",
+            ),
+        ],
+    )
+    def test_each_call_gets_offset_type_none_and_a_recompute(
+        self, feature_mgr, managers, method, com_call
+    ):
+        _, model, _, edge = _sync_tab(managers, mode=2)
+        flange = getattr(model.Flanges, com_call).return_value
         fn = getattr(feature_mgr, method)
 
         result = fn(**_dummy_arguments(fn))
 
-        assert result["unsupported"] is True
-        assert result["method"] == method
-        assert "never" in result["error"]
-        model.Flanges.Add.assert_not_called()
-        model.Flanges.AddByMatchFace.assert_not_called()
+        assert result["status"] == "created", result
+        assert getattr(model.Flanges, com_call).call_args.args[0] is edge
+        assert flange.OffsetType == 44
+        model.Recompute.assert_called_once_with()
         model.Flanges.AddSync.assert_not_called()
-        model.Flanges.AddFlangeByFace.assert_not_called()
-        doc.Models.Item.assert_not_called()
 
-    def test_every_parameter_is_echoed(self, feature_mgr):
-        result = feature_mgr.create_flange(face_index=3, edge_index=2, flange_length=0.02)
-        assert result["face_index"] == 3
-        assert result["edge_index"] == 2
-        assert result["flange_length"] == 0.02
+    def test_basic_passes_side_radius_and_the_angle_in_radians(self, feature_mgr, managers):
+        import pythoncom
+
+        _, model, _, edge = _sync_tab(managers, mode=2)
+
+        feature_mgr.create_flange(1, 0, 0.02, side="Left", inside_radius=0.003, bend_angle=45.0)
+
+        args = model.Flanges.Add.call_args.args
+        assert args[:3] == (edge, 1, 0.02)
+        assert args[3] is pythoncom.ArgNotFound
+        assert args[4] == 0.003
+        assert args[12] == pytest.approx(math.radians(45.0))
+
+    def test_a_bend_deduction_goes_in_as_method_one(self, feature_mgr, managers):
+        import pythoncom
+
+        _, model, _, _ = _sync_tab(managers, mode=2)
+
+        feature_mgr.create_flange_with_bend_calc(1, 0, 0.02, bend_deduction=0.0005)
+
+        args = model.Flanges.AddByBendDeductionOrBendAllowance.call_args.args
+        assert args[3].varianttype == pythoncom.VT_EMPTY
+        assert args[4].varianttype == pythoncom.VT_EMPTY
+        assert args[-2:] == (1, 0.0005)
+        assert len(args) == 21
+
+    def test_by_face_takes_the_reference_face_by_index(self, feature_mgr, managers):
+        _, model, face, _ = _sync_tab(managers, mode=2)
+
+        feature_mgr.create_flange_by_face(4, 0, 4, 0.02)
+
+        assert model.Flanges.AddFlangeByFace.call_args.args[1] is face
+        model.Body.Faces.return_value.Item.assert_called_with(5)
+
+    def test_a_bad_reference_face_is_an_error(self, feature_mgr, managers):
+        _, model, _, _ = _sync_tab(managers, mode=2)
+
+        result = feature_mgr.create_flange_by_face(4, 0, 9, 0.02)
+
+        assert "ref_face_index" in result["error"]
+        model.Flanges.AddFlangeByFace.assert_not_called()
 
 
 # ============================================================================
@@ -901,12 +959,12 @@ class TestCreateFlangeBasicRoutesToSync:
         assert args[11] == pytest.approx(math.radians(30.0))
         model.Flanges.Add.assert_not_called()
 
-    def test_ordered_document_still_refuses(self, feature_mgr, managers):
+    def test_ordered_document_builds_through_add(self, feature_mgr, managers):
         _, model, _, _ = _sync_tab(managers, mode=2)
         result = feature_mgr.create_flange(1, 0, 0.02)
-        assert result["unsupported"] is True
+        assert result["status"] == "created"
         model.Flanges.AddSync.assert_not_called()
-        model.Flanges.Add.assert_not_called()
+        model.Flanges.Add.assert_called_once()
 
     def test_with_bend_calc_routes_the_same_way(self, feature_mgr, managers):
         _, model, _, edge = _sync_tab(managers)

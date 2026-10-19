@@ -34,7 +34,9 @@ def create_flange(
     inside_radius: basic / by_match_face / sync / match_face_with_bend
     (defaults to 0.001 when omitted). bend_angle: basic only.
     bend_deduction: *_bend_calc methods. ref_face_index and bend_radius:
-    by_face / by_face_with_bend.
+    by_face / by_face_with_bend; ref_face_index is the sheet face that holds
+    the edge. sync* need a synchronous document; the others build in an
+    ordered one.
     """
     err = validate_numerics(
         flange_length=flange_length,

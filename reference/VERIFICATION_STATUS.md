@@ -152,7 +152,6 @@ question on this install:
 | `create_blend` | `Blends.Add(1, SelectSetArray, RadiusArray, ...)` answers `E_FAIL` with nested edge arrays plain or VARIANT-wrapped, one edge or a face's four (Solid Edge 2026). `create_round` takes the same edges through `Rounds.Add`. Refuses before COM. |
 | `create_thread` (basic, physical) | `Threads.Add(HoleData, 1, [cylinder], [end face])` answers `E_INVALIDARG` for an extruded boss and for a cut hole alike, with every `HoleData` this server can build -- including one the online reference's route fills in (`Standard = "ISO Metric"`, `Size`, `ThreadDataByDescription`, a depth method and depth) and every adjacent end face. The Siemens developer community reports the same since 2016 ("NOTHING WORKED" across VB.NET and C++ array shapes; advice: file an incident) -- [Parameters for Threads.Add Method](https://community.sw.siemens.com/s/question/0D54O000061xqWfSAI/parameters-for-threadsadd-method). Retried 2026-10-19 in ordered and synchronous parts: the end as a face or an edge, the arrays as `VT_ARRAY` of `VT_DISPATCH`/`VT_UNKNOWN`/`VT_VARIANT` (also by reference) through raw `Invoke`, `AddEx` alike; in `Training/Pin1.par` even the `HoleData` of the UI-made `Thread_1` is refused for every cylinder/face pair, so the `HoleData` is not the cause. The refusal used to point at `create_hole(method='threaded')`, which does not exist; it now names the UI Thread command. Refuses before COM. |
 | `create_contour_flange` (sync, sync_with_bend, sync_ex) | `ContourFlanges.AddSync`, `AddSyncByBendDeductionOrBendAllowance` and `AddSyncEx` all answer `E_INVALIDARG` in a synchronous document with the open line from the tab edge on the perpendicular base plane. Refuse before COM. |
-| `create_flange`, the 6 ordered methods | `Flanges.Add`, `AddByMatchFace` and `AddByBendDeductionOrBendAllowance` record a Flange with a 90-degree bend angle and a radius that never solves: range, volume and face count unchanged after `Recompute`, `Flange.Status` raises, the UI draws only its outline (8 of 12 tab edges accept the call, each tried on a fresh document; the optional parameters and every `*Side*` constant change the recorded feature and nothing else); `AddFlangeByFace` raises `E_POINTER`. Refuse before COM. **The two `sync` methods build** in a document set to synchronous before its base tab, and `basic` / `with_bend_calc` route to them when the document is synchronous; a `bend_deduction` goes in as `BendCalculationMethod` 1 with the value and reads back from the flange (`AddSync` on every horizontal edge, 6 -> 14 faces, `InsideRadius` and `BendAngle` honoured); in an ordered document they raise 0x80004021, and switching after an ordered tab answers `E_FAIL`, so they refuse rather than switch. |
 | `create_louver` (basic, sync) | `Louvers.Add` records `Louver_1` that never solves, with the line on the base plane or a plane through the top face, both directions, 1 and 3 mm deep, and every `Type`/`RoundType`/`DieRadius`/`DimensionType` combination (nine placements); `Louvers.AddSync` on a synchronous tab's top face answers 0x807B0086. Refuses before COM. |
 | `create_contour_flange` (ex) | `ContourFlanges.AddEx` and `Add` answer `E_FAIL` to 52 open-profile placements: from the tab's corner and from the interior of an edge, on the base planes and on planes perpendicular to the edge, both projection sides. Refuses before COM. |
 | `create_lofted_surface`, `_v2`, `create_bounded_surface` | `LoftedSurfaces.Add` answers `E_INVALIDARG` to 13 argument shapes including the one that builds `Models.AddLoftedProtrusion` from the same two profiles and the one the [online reference](https://support.industrysoftware.automation.siemens.com/trainings/se/106/api/SolidEdgePart~LoftedSurfaces~Add.html) documents (`Origins = 0` per circular section, every extent and tangent `igNone`), on `Sketches`-based profiles as well, `Add2` answers it to the same profiles, and `BlueSurfs.Add` answers it whatever `Origins` holds (the declared dispatch array of section circles, the profiles, `None`). All three refuse before COM. |
@@ -232,6 +231,18 @@ method `igSMFaceCutout` (205), which answers `E_FAIL` on a part.
 `NormalCutouts.AddFiniteMulti(1, [profile], side, depth, 0)` cuts in an ordered
 part (a 4 mm circle 10 mm deep removes exactly its cylinder); sheet metal keeps
 205.
+`create_flange`, all six ordered methods (basic, by_match_face, by_face,
+with_bend_calc, match_face_with_bend, by_face_with_bend): every ordered
+`Flanges.Add*` records `OffsetType = 0` when the optional `OffsetType` is not
+passed (the MatchFace calls have no such parameter), and that flange never
+solves. A flange made in the UI (`Training/FanPlate.psm`, `Foot1.psm`, ...)
+carries `OffsetType = igNone` (44); setting `Flange.OffsetType = 44` after the
+call makes each of them build on an ordered base tab (6 -> 10 faces, `Status`
+igFeatureOK, `BendRadius`, `BendAngle` in radians and a bend deduction read
+back). The `*BendDeductionOrBendAllowance` calls take `VT_EMPTY` in their
+keypoint slots (`None` answers `E_POINTER`); `AddFlangeByFace*` takes the sheet
+face that holds the edge as reference. An edge on a thin side face answers
+`E_POINTER`.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

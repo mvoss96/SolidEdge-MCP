@@ -1,7 +1,7 @@
 """Three creators that were refusals until driven live the right way.
 
-A flange builds only in a synchronous sheet-metal document (the ordered
-Flanges.Add* record a feature that never solves); Splits.Add wants the model's
+Flanges.AddSync builds only in a synchronous sheet-metal document (the ordered
+Flanges.Add* are in test_former_refusals.py); Splits.Add wants the model's
 own Body and a reference plane; AddThickenFeature wants the construction body's
 faces. Each is judged by the body, not the result dict.
 """
