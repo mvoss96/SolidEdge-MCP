@@ -19,6 +19,13 @@ from .validation import guard_overwrite
 _logger = get_logger(__name__)
 
 
+def _same_file(path: str, full_name: Any) -> bool:
+    """Whether path names the file full_name (case-insensitive, normalized)."""
+    if not isinstance(full_name, str) or not full_name:
+        return False
+    return os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(full_name))
+
+
 def _missing_template(template: str) -> dict[str, Any]:
     """A template the caller named but that is not on disk.
 
@@ -211,12 +218,19 @@ class DocumentManager:
         removed before the save.
 
         Args:
-            file_path: Target path. Omit to save in place.
+            file_path: Target path. Omit to save in place; the document's own
+                path also saves in place.
             overwrite: Permit replacing an existing file at ``file_path``.
         """
         try:
             if not self.active_document:
                 return {"error": "No active document"}
+
+            if file_path and _same_file(file_path, com_get(self.active_document, "FullName")):
+                # The document's own file is open in Solid Edge, so the
+                # overwrite guard cannot delete it (WinError 32). Saving in
+                # place writes the same file.
+                file_path = None
 
             if file_path:
                 err = guard_overwrite(file_path, overwrite)

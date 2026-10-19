@@ -111,7 +111,8 @@ def save_document(
 ) -> dict[str, Any]:
     """Save the active document.
 
-    save: in place, or Save As when file_path is given.
+    save: in place, or Save As when file_path is given (the document's own
+    path saves in place).
     copy_as: write a copy to file_path (required) and keep the current file active.
     overwrite: required to replace an existing file. Without it the call is
     refused, because Solid Edge would raise a modal overwrite prompt that

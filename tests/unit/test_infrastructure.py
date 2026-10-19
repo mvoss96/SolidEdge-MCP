@@ -325,6 +325,58 @@ class TestOverwritePromptRefusal:
         dm.active_document.SaveAs.assert_called_once_with(str(target))
 
 
+class TestSaveToOwnPath:
+    """The document's own file is locked by Solid Edge, so it is saved in place."""
+
+    def _manager(self, full_name):
+        dm = DocumentManager(MagicMock())
+        dm.active_document = MagicMock()
+        dm.active_document.Name = "part.par"
+        dm.active_document.FullName = full_name
+        return dm
+
+    def test_own_path_saves_in_place(self, tmp_path):
+        target = tmp_path / "part.par"
+        target.write_bytes(b"existing")
+        dm = self._manager(str(target))
+
+        result = dm.save_document(str(target), overwrite=True)
+
+        assert result["status"] == "saved"
+        dm.active_document.Save.assert_called_once_with()
+        dm.active_document.SaveAs.assert_not_called()
+        assert target.read_bytes() == b"existing"  # not deleted first
+
+    def test_own_path_matches_regardless_of_case_and_form(self, tmp_path):
+        target = tmp_path / "Part.par"
+        target.write_bytes(b"existing")
+        dm = self._manager(str(target))
+        other_form = str(tmp_path / "sub" / ".." / "PART.PAR").replace("/", "\\")
+
+        result = dm.save_document(other_form)
+
+        assert result["status"] == "saved"
+        dm.active_document.Save.assert_called_once_with()
+        dm.active_document.SaveAs.assert_not_called()
+
+    def test_another_path_still_uses_save_as(self, tmp_path):
+        dm = self._manager(str(tmp_path / "part.par"))
+        target = tmp_path / "copy.par"
+
+        dm.save_document(str(target))
+
+        dm.active_document.SaveAs.assert_called_once_with(str(target))
+        dm.active_document.Save.assert_not_called()
+
+    def test_an_unsaved_document_has_no_own_path(self, tmp_path):
+        dm = self._manager("")
+        target = tmp_path / "new.par"
+
+        dm.save_document(str(target))
+
+        dm.active_document.SaveAs.assert_called_once_with(str(target))
+
+
 class TestCloseAllGuard:
     """Closing every document without saving destroys other people's work.
 
