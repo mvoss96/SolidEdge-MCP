@@ -104,8 +104,8 @@ class TestSymbolFileOrigin:
 
 
 class TestSweptSurface:
-    def test_refuses_without_the_call(self, stack, new_part):
-        """SweptSurfaces.Add crashed Solid Edge 2026 on 3 of 5 calls in this work."""
+    def test_builds_through_add_ex(self, stack, new_part):
+        """SweptSurfaces.Add crashed Solid Edge 2026; the basic method uses AddEx."""
         stack.sketch.create_sketch("Front")
         stack.sketch.draw_line(0.0, 0.0, 0.0, 0.05)
         stack.sketch.close_sketch(closed=False)
@@ -115,8 +115,10 @@ class TestSweptSurface:
 
         r = stack.feature.create_swept_surface()
 
-        assert r.get("unsupported") is True, r
-        assert stack.doc.get_active_document().Constructions.SweptSurfaces.Count == 0
+        assert r.get("status") == "created", r
+        surfaces = stack.doc.get_active_document().Constructions.SweptSurfaces
+        assert surfaces.Count == 1
+        assert surfaces.Item(1).Status[0] == 1216476310  # igFeatureOK
 
 
 class TestSelectAll:

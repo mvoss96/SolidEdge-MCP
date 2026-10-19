@@ -214,30 +214,31 @@ class TestLoftedSurface:
 
 
 class TestSweptSurface:
-    """SweptSurfaces.Add crashed Solid Edge 2026 on 3 of 5 calls; no call is made."""
+    """SweptSurfaces.Add crashed Solid Edge 2026; the basic method goes through AddEx."""
 
-    def test_refuses_with_the_evidence(self, feature_mgr, managers):
+    def test_builds_through_add_ex_never_add(self, feature_mgr, managers):
         _, sketch_mgr, doc, _, _, _ = managers
-        sketch_mgr.get_accumulated_profiles.return_value = [MagicMock(), MagicMock()]
+        path, section = MagicMock(), MagicMock()
+        sketch_mgr.get_accumulated_profiles.return_value = [path, section]
 
-        result = feature_mgr.create_swept_surface(want_end_caps=True)
+        with patch("solidedge_mcp.backends.features._surfaces.profile_origin") as origin:
+            origin.return_value = (0.02, 0.0)
+            result = feature_mgr.create_swept_surface(path_profile_index=0)
 
-        assert result["unsupported"] is True
-        assert "crashes" in result["error"]
-        assert result["num_profiles"] == 2
-        assert result["want_end_caps"] is True
-        doc.Constructions.SweptSurfaces.Add.assert_not_called()
-        sketch_mgr.clear_accumulated_profiles.assert_not_called()
+        assert result["status"] == "created", result
+        surfaces = doc.Constructions.SweptSurfaces
+        surfaces.Add.assert_not_called()
+        args = surfaces.AddEx.call_args.args
+        assert args[1] == [path] and args[4] == [section]
 
-    def test_refuses_with_no_profiles_as_well(self, feature_mgr, managers):
+    def test_too_few_profiles_is_an_error(self, feature_mgr, managers):
         _, sketch_mgr, doc, _, _, _ = managers
         sketch_mgr.get_accumulated_profiles.return_value = []
 
         result = feature_mgr.create_swept_surface()
 
-        assert result["unsupported"] is True
-        assert result["num_profiles"] == 0
-        doc.Constructions.SweptSurfaces.Add.assert_not_called()
+        assert "at least 2" in result["error"]
+        doc.Constructions.SweptSurfaces.AddEx.assert_not_called()
 
 
 # ============================================================================

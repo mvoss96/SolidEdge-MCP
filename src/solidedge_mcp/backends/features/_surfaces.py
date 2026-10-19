@@ -256,7 +256,7 @@ class SurfacesMixin:
         Create a swept construction surface along a path.
 
         Same workflow as create_sweep: path profile (open) + cross-section (closed).
-        Uses SweptSurfaces.Add.
+        Uses SweptSurfaces.AddEx, as create_swept_surface_ex does.
 
         Args:
             path_profile_index: Index of the path profile (default: 0)
@@ -265,28 +265,14 @@ class SurfacesMixin:
         Returns:
             Dict with status and surface info
         """
-        # Constructions.SweptSurfaces.Add takes Solid Edge 2026 down -- the
-        # process, not the call -- once a session has been through a few
-        # documents: three crashes in five calls, each after other work in the
-        # same instance, with a circle section as well as a rectangle. On a
-        # fresh instance the call builds, and the argument shape that does is
-        # worth keeping on record: TraceCurveTypes and CrossSectionTypes are
-        # single igProfileBasedCrossSection values, Origins is [element] where
-        # element comes from profile_origin_element(section), and OriginRefs
-        # is that element's keypoint (igKeyPointCenter for a circle). None for
-        # the origins is E_FAIL. A crash is worse than a refusal, so no call.
-        all_profiles = self.sketch_manager.get_accumulated_profiles()
-        return {
-            "error": (
-                "SweptSurfaces.Add crashes Solid Edge 2026 after other work in the "
-                "same session (3 of 5 calls). Use create_sweep for a solid, or the "
-                "Solid Edge UI for a swept surface."
-            ),
-            "unsupported": True,
-            "num_profiles": len(all_profiles),
-            "path_profile_index": path_profile_index,
-            "want_end_caps": want_end_caps,
-        }
+        # Constructions.SweptSurfaces.Add took the Solid Edge 2026 process down
+        # on 3 of 5 calls once a session had been through a few documents.
+        # AddEx builds the same surface from the same profiles and stayed up
+        # in a long session (Origins as coordinate arrays, OriginRefs None),
+        # so this goes through it.
+        return self.create_swept_surface_ex(
+            path_profile_index=path_profile_index, want_end_caps=want_end_caps
+        )
 
     def create_extruded_surface_from_to(
         self, from_plane_index: int, to_plane_index: int
