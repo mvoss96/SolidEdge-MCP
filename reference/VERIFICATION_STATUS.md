@@ -158,7 +158,6 @@ question on this install:
 | `create_lofted_surface`, `_v2`, `create_bounded_surface` | `LoftedSurfaces.Add` answers `E_INVALIDARG` to 13 argument shapes including the one that builds `Models.AddLoftedProtrusion` from the same two profiles and the one the [online reference](https://support.industrysoftware.automation.siemens.com/trainings/se/106/api/SolidEdgePart~LoftedSurfaces~Add.html) documents (`Origins = 0` per circular section, every extent and tangent `igNone`), on `Sketches`-based profiles as well, `Add2` answers it to the same profiles, and `BlueSurfs.Add` answers it whatever `Origins` holds (the declared dispatch array of section circles, the profiles, `None`). All three refuse before COM. |
 | `create_swept_surface` | builds on a fresh instance once `Origins=[element]` and `OriginRefs=keypoint` (`comutil.profile_origin_element` records the shape; `None` for both is the `E_FAIL` it used to return) -- and took the Solid Edge process down on 3 of 5 calls once a session had been through a few documents. A crash is worse than a refusal; refuses before COM. |
 | `wiring(type="wire")` | `Wires.Add` answers `E_FAIL` given occurrences and given a 3D sketch line drawn with `draw_3d_line` alike (Solid Edge 2026). Refuses before COM. |
-| `convert_by_file_path` | `Application.ConvertByFilePath` returns in ~1.6 s reporting nothing wrong and writes nothing, for nine output formats (stp, step, x_t, igs, jt, pdf, dxf, stl, par); `SaveCopyAs` on the opened document writes the STEP at once. Refuses and points at `export_file`. |
 | `create_assembly_swept_protrusion` | `E_INVALIDARG` with `Origins` as inner VARIANTs (the shape the part-level sweep needs) and `E_FAIL` as plain tuples or lists; the argument shape is not the cause. |
 
 Turned from refusals into working creators on 2026-09-17, each driven live and
@@ -212,6 +211,14 @@ template)`, the template being the one
 legacy `SolidEdge.WeldmentDocument` ProgID wants a `.pwd` template, and
 `GetDefaultTemplatePath(igWeldmentDocument)` names only the template folder). The template must be a Windows path next to the
 ProgID: a path alone answers `CO_E_CLASSSTRING`, forward slashes `E_INVALIDARG`.
+`convert_by_file_path` opens the Solid Edge input without a window
+(`Documents.Open(path, 0x8)`), writes it with `SaveCopyAs` and closes it; an
+already open document is used and left open. `Application.ConvertByFilePath`
+itself (typelib help: "Converts all the files with given ext. from given
+folder/path ...") shows a progress bar, returns `True` and writes nothing for a
+file, a folder, `*.par` -> `*.stp` patterns and STEP -> `.par` alike. A STEP
+input does not open in the background (`E_FAIL`) and is refused towards
+`import_file`.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

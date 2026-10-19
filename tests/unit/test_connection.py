@@ -5,6 +5,7 @@ Tests application management, performance flags, and new property accessors.
 Uses unittest.mock to simulate COM objects.
 """
 
+import pathlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -214,19 +215,57 @@ class TestSetGlobalParameter:
 
 
 class TestConvertByFilePath:
-    """Application.ConvertByFilePath writes nothing on Solid Edge 2026 (nine
-    formats tried); the tool refuses and points at export_file."""
+    """Open without a window, SaveCopyAs, close; ConvertByFilePath writes nothing."""
 
-    def test_refuses_without_the_call(self, conn, tmp_path):
+    def test_opens_in_the_background_saves_a_copy_and_closes(self, conn, tmp_path):
         src = tmp_path / "part.par"
         src.write_bytes(b"x")
+        out = tmp_path / "part.step"
+        app = conn.application
+        app.Documents.Count = 0
+        doc = app.Documents.Open.return_value
+        doc.SaveCopyAs.side_effect = lambda path: pathlib.Path(path).write_bytes(b"step")
+
+        result = conn.convert_by_file_path(src.as_posix(), out.as_posix())
+
+        assert result["status"] == "converted"
+        assert result["bytes"] == 4
+        app.Documents.Open.assert_called_once_with(str(src), 0x8)
+        doc.SaveCopyAs.assert_called_once_with(str(out))
+        doc.Close.assert_called_once_with(False)
+        app.ConvertByFilePath.assert_not_called()
+
+    def test_an_open_document_is_used_and_left_open(self, conn, tmp_path):
+        src = tmp_path / "part.par"
+        src.write_bytes(b"x")
+        out = tmp_path / "part.step"
+        app = conn.application
+        app.Documents.Count = 1
+        doc = app.Documents.Item.return_value
+        doc.FullName = str(src)
+        doc.SaveCopyAs.side_effect = lambda path: pathlib.Path(path).write_bytes(b"s")
+
+        result = conn.convert_by_file_path(str(src), str(out))
+
+        assert result["status"] == "converted"
+        app.Documents.Open.assert_not_called()
+        doc.Close.assert_not_called()
+
+    def test_no_file_written_is_an_error(self, conn, tmp_path):
+        src = tmp_path / "part.par"
+        src.write_bytes(b"x")
+        conn.application.Documents.Count = 0
 
         result = conn.convert_by_file_path(str(src), str(tmp_path / "part.step"))
 
-        assert result["unsupported"] is True
-        assert "export_file" in result["error"]
-        assert result["input"] == str(src)
-        conn.application.ConvertByFilePath.assert_not_called()
+        assert "error" in result
+        conn.application.Documents.Open.return_value.Close.assert_called_once_with(False)
+
+    def test_a_foreign_input_is_refused_before_com(self, conn, tmp_path):
+        result = conn.convert_by_file_path(str(tmp_path / "a.stp"), str(tmp_path / "a.par"))
+
+        assert "import_file" in result["error"]
+        conn.application.Documents.Open.assert_not_called()
 
 
 # ============================================================================

@@ -5,6 +5,7 @@ Handles connecting to and managing Solid Edge application instances.
 """
 
 import contextlib
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -16,6 +17,9 @@ from .comutil import com_get
 from .logging import get_logger
 
 _logger = get_logger(__name__)
+
+#: Document types Documents.Open reads without a window.
+_SOLID_EDGE_EXTENSIONS = frozenset({".par", ".psm", ".asm", ".dft", ".pwd"})
 
 _DEAD_MARKERS = (
     "RPC server is unavailable",
@@ -549,32 +553,58 @@ class SolidEdgeConnection:
             return error_result(e)
 
     def convert_by_file_path(self, input_path: str, output_path: str) -> dict[str, Any]:
+        """Convert a Solid Edge document to the format of output_path's extension.
+
+        Opens the input without a window (Documents.Open flag 0x8), writes it
+        with SaveCopyAs and closes it again. A document that is already open is
+        used as it is and left open. Application.ConvertByFilePath is not
+        called: on Solid Edge 2026 it shows a progress bar, returns True and
+        writes nothing, for single files, folders and *.ext patterns alike.
+        A STEP or other foreign input does not open in the background
+        (E_FAIL); those go through import_file.
         """
-        Batch-convert CAD files between formats -- refused, with the evidence.
-
-        Application.ConvertByFilePath returns in about a second reporting
-        nothing wrong and writes nothing. Verified on Solid Edge 2026 with a
-        saved part and nine output extensions (stp, step, x_t, igs, jt, pdf,
-        dxf, stl, par): no file appeared for any of them, while SaveCopyAs on
-        the opened document wrote the STEP at once. export_file is that route.
-
-        Args:
-            input_path: Input file or folder path
-            output_path: Output file or folder path
-
-        Returns:
-            Dict with the refusal
-        """
-        return {
-            "error": (
-                "Application.ConvertByFilePath writes nothing on Solid Edge 2026 "
-                "(nine output formats tried; SaveCopyAs writes them). Open the file "
-                "and use export_file instead."
-            ),
-            "unsupported": True,
-            "input": input_path,
-            "output": output_path,
-        }
+        if os.path.splitext(input_path)[1].lower() not in _SOLID_EDGE_EXTENSIONS:
+            return {
+                "error": (
+                    "convert_by_file_path takes a Solid Edge document "
+                    "(.par, .psm, .asm, .dft, .pwd). Open other formats with "
+                    "import_file and write them with export_file."
+                ),
+                "input": input_path,
+            }
+        try:
+            app = self._get_app()
+            source = os.path.normcase(os.path.abspath(input_path))
+            doc: Any = None
+            documents = app.Documents
+            for i in range(1, documents.Count + 1):
+                candidate = documents.Item(i)
+                full_name = str(com_get(candidate, "FullName", "") or "")
+                if full_name and os.path.normcase(os.path.abspath(full_name)) == source:
+                    doc = candidate
+                    break
+            opened_here = doc is None
+            if opened_here:
+                doc = documents.Open(os.path.normpath(os.path.abspath(input_path)), 0x8)
+            target = os.path.normpath(os.path.abspath(output_path))
+            try:
+                doc.SaveCopyAs(target)
+            finally:
+                if opened_here:
+                    doc.Close(False)
+            if not os.path.exists(target):
+                return {
+                    "error": f"SaveCopyAs returned but wrote no file at {target}.",
+                    "input": input_path,
+                }
+            return {
+                "status": "converted",
+                "input": input_path,
+                "output": target,
+                "bytes": os.path.getsize(target),
+            }
+        except Exception as e:
+            return error_result(e)
 
     def get_default_template_path(self, doc_type: int) -> dict[str, Any]:
         """
