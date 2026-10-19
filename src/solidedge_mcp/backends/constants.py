@@ -464,9 +464,10 @@ class ThicknessSideConstants:
 class NormalCutoutMethodConstants:
     """Method argument of the NormalCutouts.Add* calls.
 
-    Aliases of constant.tlb > FeaturePropertyConstants. Normal cutouts are a
-    sheet metal feature: on an ordinary part document the call succeeds but
-    removes no material.
+    The igSM* members alias constant.tlb > FeaturePropertyConstants and apply
+    to sheet metal. A part takes 0, the plain normal cutout, which has no
+    named member: a finite cut with igSMFaceCutout answers E_FAIL there
+    (Solid Edge 2026).
     """
 
     igSMClearanceCutout = 181

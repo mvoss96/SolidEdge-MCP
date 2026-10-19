@@ -159,12 +159,7 @@ class TestRevolvedCutout:
 
 
 class TestNormalCutout:
-    """A finite normal cutout is a sheet metal feature.
-
-    Verified on Solid Edge 2026: it cuts on a sheet metal document and
-    removes nothing from an ordinary part, while the through_all and
-    through_next variants work on both.
-    """
+    """A finite normal cutout takes igSMFaceCutout in sheet metal and 0 in a part."""
 
     def test_success(self, feature_mgr, managers):
         _, sketch_mgr, doc, _, model, profile = managers
@@ -198,16 +193,15 @@ class TestNormalCutout:
         assert "error" in result
         assert "No base feature" in result["error"]
 
-    def test_refuses_an_ordinary_part(self, feature_mgr, managers):
-        _, _, doc, _, model, _ = managers
+    def test_an_ordinary_part_takes_the_plain_method(self, feature_mgr, managers):
+        _, _, doc, _, model, profile = managers
         doc.Type = IG_PART_DOCUMENT
 
         result = feature_mgr.create_normal_cutout(0.005)
 
-        assert "error" in result
-        assert "sheet metal feature" in result["error"]
-        assert result["unsupported"] is True
-        model.NormalCutouts.AddFiniteMulti.assert_not_called()
+        assert result["status"] == "created"
+        # igSMFaceCutout answers E_FAIL on a part; 0 cuts (Solid Edge 2026).
+        model.NormalCutouts.AddFiniteMulti.assert_called_once_with(1, (profile,), 2, 0.005, 0)
 
     def test_reverse_direction(self, feature_mgr, managers):
         _, _, doc, _, model, profile = managers

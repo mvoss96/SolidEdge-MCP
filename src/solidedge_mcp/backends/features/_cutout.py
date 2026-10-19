@@ -235,10 +235,10 @@ class CutoutMixin:
         """
         Create a normal cutout (cut) through the part using the active sketch profile.
 
-        Uses model.NormalCutouts.AddFiniteMulti(NumProfiles, ProfileArray, PlaneSide, Depth).
-        A normal cutout extrudes the profile perpendicular to the sketch plane face,
-        following the surface normal rather than a fixed direction.
-        Requires an existing base feature and a closed sketch profile.
+        Uses model.NormalCutouts.AddFiniteMulti(NumProfiles, ProfileArray, PlaneSide,
+        Depth, Method). A normal cutout extrudes the profile perpendicular to the
+        sketch plane face, following the surface normal rather than a fixed
+        direction. Requires an existing base feature and a closed sketch profile.
 
         Args:
             distance: Cutout depth in meters
@@ -266,36 +266,15 @@ class CutoutMixin:
             }
             dir_const = direction_map.get(direction, DirectionConstants.igRight)
 
-            # The Method argument is igSMFaceCutout, a sheet metal face cutout.
-            # On an ordinary part the call succeeds and removes nothing, which
-            # @verifies_geometry then reports as an empty feature. Say why
-            # first. Verified on Solid Edge 2026: finite works on a sheet metal
-            # document and cuts nothing on a part, while the through_all and
-            # through_next variants work on both.
-            doc_type = com_get(doc, "Type")
-            if doc_type is not None and doc_type != DocumentTypeConstants.igSheetMetalDocument:
-                return {
-                    "error": (
-                        "A normal cutout to a finite depth is a sheet metal feature "
-                        "and removes no material from an ordinary part. Use "
-                        "create_extrude(operation='Cut'), or "
-                        "create_normal_cutout(method='through_all'), which does work "
-                        "on a part."
-                    ),
-                    "unsupported": True,
-                    "document_type": doc_type,
-                }
-
-            cutouts = model.NormalCutouts
-            # AddFiniteMulti(NumProfiles, ProfileArray, ProfilePlaneSide, Depth, Method)
-            # Method is required; omitting it raises 0x8002000F Parameter not optional.
-            cutouts.AddFiniteMulti(
-                1,
-                (profile,),
-                dir_const,
-                distance,
-                NormalCutoutMethodConstants.igSMFaceCutout,
+            # Method is required (omitting it raises 0x8002000F). Sheet metal
+            # takes igSMFaceCutout; a part takes 0 -- igSMFaceCutout answers
+            # E_FAIL on a part (Solid Edge 2026).
+            method = (
+                NormalCutoutMethodConstants.igSMFaceCutout
+                if com_get(doc, "Type") == DocumentTypeConstants.igSheetMetalDocument
+                else 0  # the plain normal cutout; no named member
             )
+            model.NormalCutouts.AddFiniteMulti(1, (profile,), dir_const, distance, method)
 
             self.sketch_manager.clear_accumulated_profiles()
 

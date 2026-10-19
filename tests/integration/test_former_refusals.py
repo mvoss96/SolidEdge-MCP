@@ -50,3 +50,29 @@ class TestSelectAll:
 
         assert r == {"status": "selected", "count": 2, "selected": "occurrences"}, r
         assert doc.SelectSet.Count == 2
+
+
+def _box(stack, height=0.03):
+    stack.sketch.create_sketch("Top")
+    stack.sketch.draw_rectangle(0, 0, 0.08, 0.048)
+    stack.sketch.close_sketch()
+    assert stack.feature.create_extrude(height)["status"] == "created"
+
+
+def _volume(stack):
+    return stack.doc.get_active_document().Models.Item(1).Body.Volume
+
+
+class TestFiniteNormalCutout:
+    def test_a_part_loses_the_cut_cylinder(self, stack, new_part):
+        _box(stack)
+        before = _volume(stack)
+        stack.sketch.create_sketch("Top")
+        stack.sketch.draw_circle(0.02, 0.02, 0.004)
+        stack.sketch.close_sketch()
+
+        r = stack.feature.create_normal_cutout(0.01)
+
+        assert r.get("status") == "created", r
+        removed = before - _volume(stack)
+        assert removed == pytest.approx(3.141592653589793 * 0.004**2 * 0.01, rel=1e-3)

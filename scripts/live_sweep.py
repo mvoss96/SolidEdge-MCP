@@ -332,7 +332,7 @@ CASES: list[Case] = [
         "create_normal_cutout",
         {"method": "finite", "distance": 0.01},
         "box_circle_closed",
-        "refuses on a part",
+        "Method 0 on a part",
     ),
     Case("create_normal_cutout", {"method": "finite", "distance": 0.01}, "sheet_circle_closed"),
     Case("create_revolve", {"method": "finite", "angle": 90.0}, "part_rev_closed"),

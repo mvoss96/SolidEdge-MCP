@@ -225,6 +225,12 @@ input does not open in the background (`E_FAIL`) and is refused towards
 exists only for drafts, layouts and profiles). Each `DesignEdgebarFeatures`
 entry (part) or occurrence (assembly) now goes in through `SelectSet.Add`; a
 draft keeps `AddAll`.
+`create_normal_cutout(method='finite')` on a part: the refusal said a finite
+normal cutout is sheet-metal only, because the call passed the sheet-metal
+method `igSMFaceCutout` (205), which answers `E_FAIL` on a part.
+`NormalCutouts.AddFiniteMulti(1, [profile], side, depth, 0)` cuts in an ordered
+part (a 4 mm circle 10 mm deep removes exactly its cylinder); sheet metal keeps
+205.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`
