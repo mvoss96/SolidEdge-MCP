@@ -335,7 +335,7 @@ class PrimitiveMixin:
         """
         try:
             doc = self.doc_manager.get_active_document()
-            err = self._require_synchronous(doc)
+            err = self._require_synchronous(doc, cutout=True)
             if err:
                 return err
             models = doc.Models
@@ -411,7 +411,7 @@ class PrimitiveMixin:
         """
         try:
             doc = self.doc_manager.get_active_document()
-            err = self._require_synchronous(doc)
+            err = self._require_synchronous(doc, cutout=True)
             if err:
                 return err
             models = doc.Models
@@ -563,7 +563,7 @@ class PrimitiveMixin:
         """
         try:
             doc = self.doc_manager.get_active_document()
-            err = self._require_synchronous(doc)
+            err = self._require_synchronous(doc, cutout=True)
             if err:
                 return err
             models = doc.Models
@@ -625,7 +625,7 @@ class PrimitiveMixin:
         """
         try:
             doc = self.doc_manager.get_active_document()
-            err = self._require_synchronous(doc)
+            err = self._require_synchronous(doc, cutout=True)
             if err:
                 return err
             models = doc.Models

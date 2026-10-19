@@ -602,7 +602,9 @@ class FeatureManagerBase:
 
         return target, None
 
-    def _require_synchronous(self, doc: Any, allow_switch: bool = False) -> dict[str, Any] | None:
+    def _require_synchronous(
+        self, doc: Any, allow_switch: bool = False, cutout: bool = False
+    ) -> dict[str, Any] | None:
         """Ensure the document is in synchronous mode, or explain why not.
 
         Several feature APIs are synchronous-only: the Models.Add*ByCenter
@@ -616,6 +618,11 @@ class FeatureManagerBase:
         A part that already has features is only switched when the caller asks
         for it, because ordered and synchronous rebuild differently and that
         choice belongs to the caller.
+
+        A primitive cutout cannot cut ordered geometry at all: Solid Edge 2026
+        answers E_INVALIDARG to CylinderFeatures/BoxFeatures.AddCutout* in an
+        ordered part, and still does after ModelingMode is switched, so
+        ``cutout`` points at the sketch-based cutouts instead.
         """
         mode = com_get(doc, "ModelingMode")
         if mode is None or mode == ModelingModeConstants.seModelingModeSynchronous:
@@ -623,13 +630,23 @@ class FeatureManagerBase:
 
         has_features = bool(com_get(com_get(doc, "Models"), "Count", 0))
         if has_features and not allow_switch:
-            return {
-                "error": (
+            if cutout:
+                message = (
+                    "Primitive cutouts are synchronous-only and cannot cut the ordered "
+                    "features of this part: Solid Edge answers E_INVALIDARG, also after "
+                    "switching the part to synchronous. Cut the same shape from a sketch: "
+                    "a rectangle or circle with create_extruded_cutout, a half circle "
+                    "with create_revolved_cutout for a sphere."
+                )
+            else:
+                message = (
                     "This feature is synchronous-only and the part is in ordered mode "
                     "with existing features. Switching changes how they rebuild, so it "
-                    "is not done for you: pass allow_mode_switch=true, set the document "
-                    "to synchronous in Solid Edge, or build the shape from a sketch."
-                ),
+                    "is not done for you: set the document to synchronous in Solid "
+                    "Edge, or build the shape from a sketch."
+                )
+            return {
+                "error": message,
                 "modeling_mode": "ordered",
                 "unsupported": True,
             }

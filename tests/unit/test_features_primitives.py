@@ -295,3 +295,25 @@ class TestSynchronousGuard:
     def test_cylinder_rejects_a_zero_dimension(self, feature_mgr, managers):
         result = feature_mgr.create_cylinder(0, 0, 0, radius=0.0, height=0.05)
         assert "must be positive" in result["error"]
+
+
+class TestPrimitiveCutoutInAnOrderedPart:
+    """A primitive cutout cannot cut ordered geometry, even after a mode switch.
+
+    Solid Edge 2026 answers CylinderFeatures.AddCutoutByCenterAndRadius with
+    E_INVALIDARG in an ordered part and again after ModelingMode is set to
+    synchronous; the refusal names the sketch-based cutouts.
+    """
+
+    def test_the_refusal_points_at_the_sketch_cutouts(self, feature_mgr, managers):
+        _, _, doc, models, model, _ = managers
+        doc.ModelingMode = 2
+        models.Count = 1
+
+        result = feature_mgr.create_cylinder_cutout(0.02, 0.02, 0, 0.005, 0.03)
+
+        assert result["unsupported"] is True
+        assert "create_extruded_cutout" in result["error"]
+        assert "allow_mode_switch" not in result["error"]
+        assert doc.ModelingMode == 2
+        model.CylinderFeatures.AddCutoutByCenterAndRadius.assert_not_called()
