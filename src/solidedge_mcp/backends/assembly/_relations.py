@@ -75,7 +75,7 @@ class RelationsMixin:
         # pywin32 hands out type-library wrappers (after any gencache.EnsureDispatch
         # on this machine), and late-bound it returns a 6-zero tuple as the minimum.
         low, high = face.GetRange(r8_array(3), r8_array(3))
-        midpoint = [(a + b) / 2 for a, b in zip(low, high)]
+        midpoint = [(a + b) / 2 for a, b in zip(low, high, strict=True)]
         return reference, midpoint
 
     @verifies_collection_growth("Relations3d")
