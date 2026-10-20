@@ -1,6 +1,6 @@
 # Verification Status
 
-**Last measured: 2026-10-19**, against Solid Edge 2026 (226.00.01.04), branch `fix/unsupported-tools`.
+**Last measured: 2026-10-20**, against Solid Edge 2026 (226.00.01.04), branch `feat/sketch-dimensions`.
 
 Regenerate every number here with the commands in [How to re-measure](#how-to-re-measure).
 Nothing in this document is an estimate.
@@ -26,8 +26,8 @@ So this document tracks the other question: **does it actually do what it says?*
 |---|---|---|
 | Tools | 120 | the MCP action surface |
 | Resources | 53 + 2 guides | read-only `solidedge://` endpoints |
-| Unit tests | 3,023 (12 skip) | mocked COM; catch shape, not truth |
-| Integration tests | 105 | drive real Solid Edge; 16 in `test_former_refusals.py` pin tools that used to refuse; 19 pin exact values against a known box, 7 pin the wrong-member and lost-value fixes, 11 pin the synchronous flange, the split, the thicken, the slot, the bead, the lofted flange and the mirror only the volume can see, 5 pin 3D sketch lines, structural frames along them (both methods) and planar relations through References, and there are assembly, draft and sheet-metal fixtures |
+| Unit tests | 3,074 (12 skip) | mocked COM; catch shape, not truth |
+| Integration tests | 124 | drive real Solid Edge; 5 in `test_parametric_sketches.py` build dimensioned, variable-driven sketches through the tool functions (the linked-variable one skips while another program holds the clipboard); 26 in `test_former_refusals.py` pin tools that used to refuse; 19 pin exact values against a known box, 7 pin the wrong-member and lost-value fixes, 11 pin the synchronous flange, the split, the thicken, the slot, the bead, the lofted flange and the mirror only the volume can see, 5 pin 3D sketch lines, structural frames along them (both methods) and planar relations through References, and there are assembly, draft and sheet-metal fixtures |
 | Structural audits | 7 | all at zero but one documented finding |
 
 ### Creator verification
@@ -44,13 +44,13 @@ which succeeds and builds nothing.
 
 | | count | |
 |---|---|---|
-| Verified live | **176** | the body or the target collection must change, or the result becomes an error |
-| Refuse honestly | 37 | return `unsupported: True` -- 34 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
+| Verified live | **184** | the body or the target collection must change, or the result becomes an error |
+| Refuse honestly | 29 | return `unsupported: True` -- 26 outright, plus 3 that refuse one argument value and otherwise work (`create_extrude`/`create_revolve` with `operation="Intersect"`, `create_revolve_full` with a treatment) |
 | Neither | **0** | |
 | **Total `create_*`** | **213** | |
 
-Of the 176, 126 are face-count checks and 50 are collection-growth checks:
-15 reference planes (`RefPlanes`), 14 surfaces (the five `Constructions.*Surfaces`
+Of the 184, 132 are face-count checks and 52 are collection-growth checks:
+17 reference planes (`RefPlanes`), 14 surfaces (the five `Constructions.*Surfaces`
 summed), 1 split (`Models.*.Splits`, because the first model keeps its faces), 9 that reshape or annotate (`Models.*.Etches`, `.Threads`, `.Drafts`,
 `.FaceRotates`; `PartsLists`, `DraftBendTables`), 3 surface blends
 (`Models.*.Rounds` + `.Blends`), 2 sketches (`ProfileSets`), and 6 document
@@ -145,7 +145,9 @@ louver needs a line, a constraint without its elements, ...); they were
 corrected so the record separates the two. The run of 2026-10-19 on `fix/unsupported-tools`:
 **133 OK, 6 refuse honestly, 3 FAIL, 0 NOOP** across 142 cases; the three
 FAILs are the same deliberate probes (a missing macro, `manage_feature`
-without a target, a plane asked for NURBS data). What the sweep and the probes
+without a target, a plane asked for NURBS data). The run of 2026-10-20 on
+`feat/sketch-dimensions`: **144 OK, 6 refuse honestly, 3 FAIL, 0 NOOP** across
+153 cases and 120 tools; the three FAILs are those probes again. What the sweep and the probes
 behind it leave as known-broken, each with the evidence that closes the
 question on this install:
 
@@ -268,7 +270,10 @@ seKeypointEndConditionNatural, seKeypointEndConditionNatural)` makes a path
 through space points (without the optional `EndpointEndType` it answers
 `E_INVALIDARG`), and `Harness.Wires.Add(1, [path], [True], "")` adds the wire.
 The tool takes `path_points`; `path_indices` now index `AssemblyDocument.Paths`.
-`cable` and `bundle` still pass occurrences as paths and were not retried.
+Since 2026-10-20 (branch `feat/sketch-dimensions`) `cable` and `bundle` take
+the same harness paths and the harness wires (`Cables.Add` / `Bundles.Add` with
+`Wire` objects as plain lists, empty split-path lists): a cable of two wires and a
+bundle of one build.
 `create_swept_surface(method='basic')` no longer calls `SweptSurfaces.Add`,
 which took the Solid Edge process down on 3 of 5 calls once a session had been
 through a few documents. It goes through `SweptSurfaces.AddEx`, the call
@@ -278,6 +283,33 @@ test, all solved, no crash.
 `simplify(method='auto')` in an assembly calls
 `AssemblyDocument.CreateOrEditSimplifiedAssembly(0, [], 0.0, n, occurrences)`
 with every occurrence included: `IsAssemblySimplified` goes False -> True.
+
+Turned from refusals into working creators on branch `feat/sketch-dimensions`
+(2026-10-20), each driven live and pinned in `test_former_refusals.py`:
+`create_ref_plane(method='angle')` (`RefPlanes.AddAngularByAngle(parent, angle,
+igNormalSide, pivot RefPlane, igPivotEnd)`; the pivot is a reference plane, given
+as `pivot_plane_index`); `create_ref_plane(method='three_points')`
+(`RefPlanes.AddBy3Points(3, edges, keypoint types)`, each point matched to the
+start or end of a body edge); `create_round(method='variable')`
+(`Rounds.AddVariable(1, [edge], 2, [StartVertex, EndVertex], [r1, r2])`);
+`create_reinforcement(type='lip')` (`Lips.Add(1, [edge], side face, cap face,
+width, height)`, the side face from `Edge.GetFaces`, +240 mm3 on a 40 mm edge with
+a 2 x 3 mm section); `create_slot(method='ex')` (`Slots.AddEx` with `None` in the
+keypoint and face slots) and `direction='Reverse'` on the basic slot (`igLeft`
+cuts from a plane whose normal points out of the body; the earlier refusal came
+from a plane whose normal pointed in); `create_pattern(method='by_fill' |
+'by_fill_ex')` (`Patterns.AddByFill(Ex)` with a closed sketch as the region).
+
+Retried on 2026-10-20 and still refused, with the answer in each message:
+the keypoint extents (`AddFiniteByKeyPoint*` answers `E_FAIL` with a body vertex,
+edge or face; a sketch point records a feature whose `Status` raises and whose
+volume never changes), `Thinwalls.Add` (`E_FAIL` with the open face as a list or
+`VT_ARRAY | VT_DISPATCH`, with or without unique thicknesses, both sides),
+`MirrorCopies.AddSyncEx` (`E_FAIL` typed and by keyword), `Patterns.AddDuplicate`
+(`E_FAIL` with sketch points as references), `Slots.AddSync` (`E_FAIL` in a
+synchronous part) and `Blends.AddVariable` (`E_POINTER`). `operation='Intersect'`
+has no creator in `Part.tlb`. Not retried: the table and curve patterns (an Excel
+file, 23 arguments with curve anchors) and the assembly mirror and pattern.
 
 Fixed in the live-fix round of 2026-09-17, each driven live and pinned:
 `face_operation` (both rotates) raised `E_INVALIDARG` because `FaceRotates.Add`

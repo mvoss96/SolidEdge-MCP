@@ -179,6 +179,11 @@ CONTEXTS: dict[str, list[Step]] = {
         ("manage_sketch", {"action": "create", "plane": "Top"}),
         ("draw", {"shape": "rectangle", "x1": 0, "y1": 0, "x2": 0.08, "y2": 0.048}),
     ],
+    "part_sketch_line": _part()
+    + [
+        ("manage_sketch", {"action": "create", "plane": "Top"}),
+        ("draw", {"shape": "line", "x1": 0.0, "y1": 0.0, "x2": 0.05, "y2": 0.001}),
+    ],
     "part_rect_closed": _part() + _rect_closed(),
     "part_rev_closed": _part() + _rev_closed(),
     "part_loft": _part() + _loft_profiles(),
@@ -241,6 +246,15 @@ CONTEXTS: dict[str, list[Step]] = {
         ("manage_sketch", {"action": "close"}),
     ],
     "asm": _asm(1),
+    "asm_wires": _asm(1)
+    + [
+        ("wiring", {"type": "wire", "path_points": [[0.0, y, 0.05], [0.1, y, 0.05]]})
+        for y in (0.0, 0.01)
+    ],
+    "box_hole_region": _box()
+    + _circle_closed()
+    + [("create_extruded_cutout", {"method": "finite", "distance": 0.01})]
+    + _rect_closed(),
     "asm_lines": _asm(1)
     + [("draw_3d_line", {"x1": 0.0, "y1": 0.0, "z1": 0.0, "x2": 0.3, "y2": 0.0, "z2": 0.0})],
     "asm2": _asm(2),
@@ -318,7 +332,8 @@ CASES: list[Case] = [
             "constraint_type": "Horizontal",
             "elements": [["line", 1]],  # this tool documents 1-based element indices
         },
-        "part_sketch_rect",
+        "part_sketch_line",
+        "a rectangle's edges are horizontal already",
     ),
     Case(
         "sketch_advanced_modify",
@@ -331,6 +346,23 @@ CASES: list[Case] = [
         "part_sketch_rect",
     ),
     Case("sketch_project", {"source": "ref_plane", "plane_index": 2}, "part_sketch"),
+    Case(
+        "sketch_constraint",
+        {"type": "geometric", "constraint_type": "Colinear", "elements": [["line", 1], ["ref", 3]]},
+        "part_sketch_rect",
+        "an edge onto the Front plane line",
+    ),
+    Case(
+        "sketch_dimension",
+        {"type": "length", "elements": [["line", 1]], "value": 0.06, "name": "Breite"},
+        "part_sketch_rect",
+    ),
+    Case(
+        "sketch_dimension",
+        {"type": "distance", "elements": [["line", 1], ["ref", 3]], "value": 0.005},
+        "part_sketch_rect",
+        "edge to the Front plane line",
+    ),
     # part features
     Case("create_extrude", {"method": "finite", "distance": 0.03}, "part_rect_closed"),
     Case("create_extruded_cutout", {"method": "finite", "distance": 0.01}, "box_circle_closed"),
@@ -348,10 +380,37 @@ CASES: list[Case] = [
     Case("create_revolved_cutout", {"method": "finite", "angle": 360.0}, "box_rev_closed"),
     Case("create_hole", {"method": "through_all", "x": 0.02, "y": 0.02, "diameter": 0.006}, "box"),
     Case("create_round", {"method": "all_edges", "radius": 0.002}, "box"),
+    Case(
+        "create_round",
+        {"method": "variable", "radii": [0.002, 0.004], "face_index": 0, "edge_index": 0},
+        "box",
+    ),
     Case("create_chamfer", {"method": "equal", "distance": 0.002}, "box"),
     Case("create_draft_angle", {"face_index": 0, "angle": 5.0}, "box"),
     Case(
         "create_ref_plane", {"method": "offset", "parent_plane_index": 1, "distance": 0.02}, "part"
+    ),
+    Case(
+        "create_ref_plane",
+        {"method": "angle", "parent_plane_index": 1, "angle": 30.0, "pivot_plane_index": 2},
+        "part",
+    ),
+    Case(
+        "create_ref_plane",
+        {
+            "method": "three_points",
+            "x1": 0.0,
+            "y1": 0.0,
+            "z1": 0.03,
+            "x2": 0.08,
+            "y2": 0.0,
+            "z2": 0.03,
+            "x3": 0.0,
+            "y3": 0.048,
+            "z3": 0.03,
+        },
+        "box",
+        "three box vertices",
     ),
     Case(
         "create_ref_plane_on_curve",
@@ -449,6 +508,21 @@ CASES: list[Case] = [
     Case("thicken", {"method": "sync", "thickness": 0.002}, "part_surface"),
     Case("create_web_network", {"thickness": 0.002, "depth": 0.01}, "box_circle_closed"),
     Case("create_reinforcement", {"type": "rib", "thickness": 0.002}, "box_circle_closed"),
+    Case(
+        "create_reinforcement",
+        {"type": "lip", "thickness": 0.003, "width": 0.002, "face_index": 0},
+        "box",
+    ),
+    Case(
+        "create_pattern",
+        {
+            "method": "by_fill",
+            "feature_name": "ExtrudedCutout_1",
+            "x_spacing": 0.012,
+            "y_spacing": 0.012,
+        },
+        "box_hole_region",
+    ),
     Case("add_body", {"method": "basic", "body_type": "Solid", "body_name": "B2"}, "box"),
     Case("delete_topology", {"type": "blend", "face_index": 6}, "box_round"),
     Case(
@@ -517,6 +591,7 @@ CASES: list[Case] = [
         "sheet_loft_lines",
     ),
     Case("create_slot", {"method": "basic", "width": 0.004, "depth": 0.01}, "sheet_line_closed"),
+    Case("create_slot", {"method": "ex", "width": 0.004, "depth": 0.01}, "sheet_line_closed"),
     Case("create_stamped", {"type": "bead", "depth": 0.002}, "sheet_line_closed"),
     Case("create_surface_mark", {"type": "etch", "face_indices": [0]}, "sheet_circle_closed"),
     Case(
@@ -638,6 +713,24 @@ CASES: list[Case] = [
         "wiring",
         {"type": "wire", "path_points": [[0.0, 0.0, 0.05], [0.1, 0.0, 0.05]]},
         "asm",
+    ),
+    Case(
+        "wiring",
+        {
+            "type": "cable",
+            "wire_indices": [0, 1],
+            "path_points": [[0.0, 0.02, 0.05], [0.1, 0.02, 0.05]],
+        },
+        "asm_wires",
+    ),
+    Case(
+        "wiring",
+        {
+            "type": "bundle",
+            "conductor_indices": [0],
+            "path_points": [[0.0, 0.03, 0.05], [0.1, 0.03, 0.05]],
+        },
+        "asm_wires",
     ),
     # draft
     Case("manage_sheet", {"action": "add"}, "draft"),
