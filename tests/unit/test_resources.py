@@ -28,6 +28,14 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _keyed(components):
+    """Index registered components by URI template, URI or name."""
+    return {
+        str(getattr(c, "uri_template", None) or getattr(c, "uri", None) or c.name): c
+        for c in components
+    }
+
+
 @pytest.fixture(scope="module")
 def mcp():
     server = FastMCP("t")
@@ -51,15 +59,15 @@ def managers(monkeypatch):
 
 class TestRegistration:
     def test_registers_all_endpoints(self, mcp):
-        static = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        static = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         assert len(static) == EXPECTED_STATIC
         assert len(templates) == EXPECTED_TEMPLATES
         assert len(static) + len(templates) == EXPECTED_TOTAL
 
     def test_registration_table_matches_the_server(self, mcp):
-        static = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        static = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         assert set(static) | set(templates) == {uri for uri, _ in resources.RESOURCES}
 
     def test_uris_are_unique(self):
@@ -67,29 +75,29 @@ class TestRegistration:
         assert len(uris) == len(set(uris)) == EXPECTED_TOTAL
 
     def test_every_uri_uses_the_solidedge_scheme(self, mcp):
-        static = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        static = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         for uri in list(static) + list(templates):
             assert uri.startswith("solidedge://"), uri
 
     def test_every_mime_type_is_json(self, mcp):
-        static = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        static = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         for uri, res in list(static.items()) + list(templates.items()):
             assert res.mime_type == "application/json", uri
 
     def test_templates_are_exactly_the_parameterised_uris(self, mcp):
-        templates = _run(mcp.get_resource_templates())
+        templates = _keyed(_run(mcp.list_resource_templates()))
         assert set(templates) == {uri for uri, _ in resources.RESOURCES if "{" in uri}
 
     def test_every_resource_is_tagged_query(self, mcp):
-        static = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        static = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         for uri, res in list(static.items()) + list(templates.items()):
             assert res.tags == {"query"}, uri
 
     def test_resources_run_on_the_com_thread(self, mcp):
-        static = _run(mcp.get_resources())
+        static = _keyed(_run(mcp.list_resources()))
         for uri, res in static.items():
             assert getattr(res.fn, "__wrapped__", None) is not None, uri
 
@@ -184,7 +192,7 @@ class TestHandlers:
 
 class TestSpatialContextResource:
     def test_registered_at_the_documented_uri(self, mcp):
-        static = _run(mcp.get_resources())
+        static = _keyed(_run(mcp.list_resources()))
         assert "solidedge://spatial-context" in static
         assert static["solidedge://spatial-context"].mime_type == "application/json"
         assert static["solidedge://spatial-context"].tags == {"query"}

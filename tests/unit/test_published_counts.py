@@ -26,12 +26,20 @@ STATUS = ROOT / "reference" / "VERIFICATION_STATUS.md"
 CLAUDE = ROOT / "CLAUDE.md"
 
 
+def _keyed(components):
+    """Index registered components by URI template, URI or name."""
+    return {
+        str(getattr(c, "uri_template", None) or getattr(c, "uri", None) or c.name): c
+        for c in components
+    }
+
+
 @pytest.fixture(scope="module")
 def registered():
     mcp = create_server()
-    tools = asyncio.run(mcp.get_tools())
-    resources = asyncio.run(mcp.get_resources())
-    templates = asyncio.run(mcp.get_resource_templates())
+    tools = _keyed(asyncio.run(mcp.list_tools()))
+    resources = _keyed(asyncio.run(mcp.list_resources()))
+    templates = _keyed(asyncio.run(mcp.list_resource_templates()))
     guides = [k for k in resources if "/guide/" in str(k)]
     return {
         "tools": len(tools),

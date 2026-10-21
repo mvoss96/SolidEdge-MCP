@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "fastmcp>=2.14,<3",
+    "fastmcp>=3.4,<4",
     "pywin32>=306; sys_platform == 'win32'",
 ]
 
