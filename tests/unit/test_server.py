@@ -35,6 +35,14 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _keyed(components):
+    """Index registered components by URI template, URI or name."""
+    return {
+        str(getattr(c, "uri_template", None) or getattr(c, "uri", None) or c.name): c
+        for c in components
+    }
+
+
 class TestRegistration:
     def test_module_level_server_exists(self):
         assert server_module.mcp.name == "Solid Edge MCP Server"
@@ -45,7 +53,7 @@ class TestRegistration:
             assert needle in text
 
     def test_every_tool_has_annotations_and_tags(self, mcp):
-        tools = _run(mcp.get_tools())
+        tools = _keyed(_run(mcp.list_tools()))
         assert len(tools) >= 100
         missing_annotations = [n for n, t in tools.items() if t.annotations is None]
         missing_tags = [n for n, t in tools.items() if not t.tags]
@@ -55,7 +63,7 @@ class TestRegistration:
         assert unknown_tags == set()
 
     def test_read_only_and_destructive_hints_are_populated(self, mcp):
-        tools = _run(mcp.get_tools())
+        tools = _keyed(_run(mcp.list_tools()))
         read_only = [n for n, t in tools.items() if t.annotations and t.annotations.readOnlyHint]
         destructive = [
             n for n, t in tools.items() if t.annotations and t.annotations.destructiveHint
@@ -65,14 +73,14 @@ class TestRegistration:
         assert not (set(read_only) & set(destructive))
 
     def test_tools_run_on_com_thread(self, mcp):
-        tools = _run(mcp.get_tools())
+        tools = _keyed(_run(mcp.list_tools()))
         for tool in tools.values():
             fn = tool.fn
             assert getattr(fn, "__wrapped__", None) is not None, tool.name
 
     def test_resources_and_guides(self, mcp):
-        resources = _run(mcp.get_resources())
-        templates = _run(mcp.get_resource_templates())
+        resources = _keyed(_run(mcp.list_resources()))
+        templates = _keyed(_run(mcp.list_resource_templates()))
         assert len(resources) + len(templates) == 55  # 53 data + 2 guides
         assert "solidedge://guide/workflows" in resources
         assert "solidedge://guide/conventions" in resources
@@ -83,7 +91,7 @@ class TestRegistration:
                 assert res.mime_type == "application/json", uri
 
     def test_prompts_registered(self, mcp):
-        prompts = _run(mcp.get_prompts())
+        prompts = _keyed(_run(mcp.list_prompts()))
         assert {
             "new_part",
             "design_review",

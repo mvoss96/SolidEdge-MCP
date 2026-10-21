@@ -700,7 +700,7 @@ def _tool_total() -> int:
 
         with ThreadPoolExecutor(max_workers=1) as pool:
             _TOOL_TOTAL.append(
-                pool.submit(lambda: len(asyncio.run(create_server().get_tools()))).result()
+                pool.submit(lambda: len(asyncio.run(create_server().list_tools()))).result()
             )
     return _TOOL_TOTAL[0]
 
